@@ -7,7 +7,7 @@ from aiogram import Bot
 
 logger = logging.getLogger(__name__)
 
-async def send_message_safe(bot: Bot, user_id: int, text: str, parse_mode: str = "Markdown2", **kwargs) -> dict:
+async def send_message_safe(bot: Bot, user_id: int, text: str, parse_mode: str = "HTML", **kwargs) -> dict:
     """
     Безопасная отправка сообщения одному пользователю.
     Возвращает статус: {"ok": bool, "user_id": int, "error": str (опционально)}

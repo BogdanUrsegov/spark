@@ -146,7 +146,7 @@ async def process_description(message: Message, state: FSMContext):
         "📍 <b>Шаг 5/6: Твоя геопозиция</b>\n\n"
         "Нажми кнопку ниже, чтобы поделиться местоположением. "
         "Это поможет находить интересных людей рядом с тобой!",
-        reply_markup=get_location_keyboard()
+        reply_markup=get_location_keyboard(False)
     )
 
 

@@ -11,8 +11,7 @@ async def get_city_by_coords(lat: float, lon: float, max_retries: int = 3) -> st
     Определяет город по координатам через Nominatim (OSM) с защитой от лимитов.
     """
     # zoom=10 помогает получить уровень города, а не конкретной улицы
-    
-    from ..main import bot
+    from main import bot
     url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&accept-language=ru&zoom=10"
     
     # ВАЖНО: Nominatim строго требует корректный User-Agent

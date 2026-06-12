@@ -13,11 +13,12 @@ def get_profile_keyboard():
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ])
 
-def get_location_keyboard() -> ReplyKeyboardMarkup:
+def get_location_keyboard(is_cancel_button: bool = True) -> ReplyKeyboardMarkup:
+    cancel_button = [KeyboardButton(text="❌ Отмена")] if is_cancel_button else []
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📍 Поделиться геопозицией", request_location=True)],
-            [KeyboardButton(text="❌ Отмена")]
+            cancel_button
         ],
         resize_keyboard=True,
         one_time_keyboard=True  # Скроется после нажатия
