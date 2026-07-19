@@ -26,6 +26,7 @@ async def create_database() -> None:
                 latitude REAL,
                 longitude REAL,
                 city TEXT,
+                filter_gender INTEGER DEFAULT 0,  -- 0 - без фильтра, 1 - только девушки, 2 - только парни
                 likes_given INTEGER DEFAULT 0,
                 likes_received INTEGER DEFAULT 0,
                 mutual_likes INTEGER DEFAULT 0,
@@ -80,8 +81,8 @@ async def add_new_profile(
             INSERT OR REPLACE INTO users (
                 user_id, username, name, age, gender, 
                 description, photo_id, latitude, longitude, city,
-                likes_given, likes_received, mutual_likes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+                filter_gender, likes_given, likes_received, mutual_likes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)
         """, (user_id, username, name, age, gender, description, photo_id, latitude, longitude, city))
         await db.commit()
 
@@ -157,7 +158,7 @@ async def get_user_field(user_id: int, field_name: str) -> any:
         "user_id", "username", "name", "age", "gender",
         "description", "photo_id", "likes_given",
         "likes_received", "mutual_likes", "is_active",
-        "latitude", "longitude", "city"
+        "latitude", "longitude", "city", "filter_gender"
     }
     
     if field_name not in allowed_fields:
@@ -178,7 +179,7 @@ async def get_user_field(user_id: int, field_name: str) -> any:
 # Список разрешённых полей для редактирования (белый список)
 ALLOWED_EDITABLE_FIELDS = {
     "name", "age", "gender", "description", "photo_id", 
-    "city", "latitude", "longitude", "is_active"
+    "city", "latitude", "longitude", "is_active", "filter_gender"
 }
 
 

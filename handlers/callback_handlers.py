@@ -1,7 +1,8 @@
 import logging
 from aiogram import Bot, Router, F
-from config import MESSAGE_PROFILE_END
+from config import FILTER_GENDER_MAP, MESSAGE_PROFILE_END
 from keyboards import get_fill_profile_keyboard, get_cancel_like_msg, get_back_home, get_main_menu_keyboard, get_active_keyboard
+from keyboards.profile_kb import FILTER_ALL_GENDER_CALL, FILTER_FEMALE_GENDER_CALL, FILTER_GENDER_CALL, FILTER_MALE_GENDER_CALL, get_filter_gender_keyboard, get_filters_keyboard
 from services import *
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -259,6 +260,40 @@ async def handle_update_username(callback: CallbackQuery, bot: Bot):
             show_alert=True
         )
         
+@router.callback_query(F.data == "filters")
+async def handle_filters(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    logger.info(f"User {user_id} requested filters")
+    await callback.answer("Настройки фильтров")
+    
+    await callback.message.answer(
+        "Выберите категории, по которым хотите видеть анкеты:",
+        reply_markup=await get_filters_keyboard()
+    )
+
+@router.callback_query(F.data == FILTER_GENDER_CALL)
+async def handle_filter_gender(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    await callback.answer("Настройка фильтра по полу")
+    await callback.message.answer(
+        "Выберите, кого хотите найти",
+        reply_markup=await get_filter_gender_keyboard(user_id)
+    )
+
+@router.callback_query(F.data.in_((FILTER_MALE_GENDER_CALL, FILTER_ALL_GENDER_CALL, FILTER_FEMALE_GENDER_CALL)))
+async def handle_set_filter_gender(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    new_value = FILTER_GENDER_MAP[callback.data]
+    
+    await update_user_field(user_id, "filter_gender", new_value)
+    await callback.answer("Фильтр обновлён ✅")
+    
+    # Перерисовываем клавиатуру с новой галочкой
+    await callback.message.edit_reply_markup(
+        reply_markup=await get_filter_gender_keyboard(user_id)
+    )
+    
+
 """
 @router.callback_query(F.data == "view_profiles")
 async def handle_view_profiles(callback: CallbackQuery, bot: Bot):

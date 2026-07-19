@@ -15,3 +15,10 @@ MESSAGE_PROFILE_END = (
 )
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден в переменных окружения. Проверьте файл .env")
+
+
+FILTER_GENDER_MAP = {
+    "filter_all_gender":    0,
+    "filter_female_gender": 1,
+    "filter_male_gender":   2,
+}
