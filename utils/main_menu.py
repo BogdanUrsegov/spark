@@ -42,7 +42,7 @@ async def send_main_menu(
         logger.debug(f"Main menu sent to user {user_id}, profile is complete")
     else:
         text = (
-            "👋 <b>Добро пожаловать! 🎉!</b>\n\n"
+            "👋 <b>Добро пожаловать!</b>\n\n"
             "Найди новых друзей и интересных людей рядом с тобой\n\n"
             "<b><i>Создай профиль — и пусть начнётся знакомство! ✨</i></b>😉"
         )
