@@ -201,7 +201,7 @@ async def process_gender_selection(callback: CallbackQuery, state):
         "💬 <b>Шаг 4/6: Расскажи о себе!</b>\n\n"
         "Напиши короткое описание (до 500 символов).\n\n"
         "<b><i>Расскажи, чем увлекаешься, что ищешь — всё, что хочешь, чтобы узнали о тебе!</i></b>\n\n"
-        "Можешь пропустить этот шаг кнопкой ниже.",
+        "Можешь пропустить этот шаг.",
         parse_mode="HTML",
         reply_markup=_skip_description_keyboard(),
     )
@@ -276,14 +276,8 @@ async def process_location(message: Message, state: FSMContext):
     await state.set_state(FillProfile.photo)
     await message.answer(
         "📸 <b>Шаг 6/6: Добавь фото или видео</b>\n\n"
-        "Отправляй фото и/или видео по одному. Можно добавить до 3 файлов; "
-        "длительность каждого видео — не больше 30 секунд.\n\n"
-        "Когда закончишь, нажми «✅ Готово» ниже. Нужно добавить хотя бы один файл.",
+        "Отправь до 3 фото и/или видео (до 30 секунд каждое).",
         reply_markup=ReplyKeyboardRemove(),
-    )
-    await message.answer(
-        "После каждого файла появится кнопка «✅ Готово».",
-        reply_markup=_finish_media_keyboard(),
     )
 
 
