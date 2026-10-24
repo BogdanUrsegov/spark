@@ -1,5 +1,6 @@
 import html
 import logging
+import re
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
@@ -118,7 +119,11 @@ async def fake_profile_name(message: Message, state: FSMContext):
         await state.clear()
         return
     name = (message.text or "").strip()
-    if not 2 <= len(name) <= 30 or contains_forbidden_content(name):
+    if (
+        not 2 <= len(name) <= 30
+        or not re.fullmatch(r"[а-яА-ЯёЁa-zA-Z ]+", name)
+        or contains_forbidden_content(name)
+    ):
         await message.answer("❌ Имя должно быть длиной 2–30 символов, без ссылок и @. Попробуйте ещё раз.")
         return
     await state.update_data(fake_name=name)
