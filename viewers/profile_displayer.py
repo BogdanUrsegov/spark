@@ -79,7 +79,7 @@ class ProfileDisplayer:
     def _format_location(city) -> str:
         """Форматирует строку с городом (если есть)"""
         if city and city.strip():
-            return f"📍 {city}"
+            return f"📍 {html.escape(city)}"
         return ""
 
     @staticmethod
@@ -131,7 +131,7 @@ class ProfileDisplayer:
         name = html.escape(profile["name"])
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         city = profile.get("city")
-        city_str = f" | 📍 {city}" if city else ""
+        city_str = f" | 📍 {html.escape(city)}" if city else ""
         return f"{gender_emoji} <b>{name}</b>, {profile['age']}{city_str}"
 
     @staticmethod
