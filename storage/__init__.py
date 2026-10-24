@@ -1,6 +1,7 @@
 from .database import (
     create_database,
     add_new_profile,
+    set_user_profile_media,
     is_profile_complete,
     get_user_profile,
     get_user_field,
@@ -25,6 +26,7 @@ from .admin_db import (
 __all__ = [
     "create_database",
     "add_new_profile",
+    "set_user_profile_media",
     "is_profile_complete",
     "get_user_profile",
     "get_user_field",
