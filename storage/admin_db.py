@@ -25,9 +25,11 @@ async def is_user_blacklisted(user_id: int) -> bool:
 
 async def add_to_blacklist(user_id: int) -> bool:
     """
-    Добавляет пользователя в черный список.
-    Создает таблицу blacklisted_users, если её нет.
+    Добавляет реального Telegram-пользователя в чёрный список.
+    Внутренние отрицательные ID тестовых анкет блокировать нельзя.
     """
+    if user_id <= 0:
+        return False
     try:
         async with aiosqlite.connect(PATH_DB) as db:
             await db.execute("""
@@ -100,7 +102,7 @@ async def get_blacklisted_users_count() -> int:
     """
     try:
         async with aiosqlite.connect(PATH_DB) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM blacklisted_users")
+            cursor = await db.execute("SELECT COUNT(*) FROM blacklisted_users WHERE user_id > 0")
             result = await cursor.fetchone()
             return result[0] if result else 0
     except Exception as e:
