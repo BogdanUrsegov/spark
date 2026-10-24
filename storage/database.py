@@ -158,6 +158,45 @@ async def add_new_profile(
         await db.commit()
 
 
+async def set_user_profile_media(
+    user_id: int,
+    media: list[Dict[str, str]],
+) -> bool:
+    """Replace the stored media list of a real user's profile (one to three items)."""
+    if user_id <= 0:
+        return False
+    if not isinstance(media, list) or not 1 <= len(media) <= 3:
+        raise ValueError("В анкете должно быть от одного до трёх фото или видео.")
+
+    normalized: list[Dict[str, str]] = []
+    for item in media:
+        if (
+            not isinstance(item, dict)
+            or item.get("type") not in {"photo", "video"}
+            or not isinstance(item.get("file_id"), str)
+            or not item["file_id"].strip()
+        ):
+            raise ValueError("Поддерживаются только фото и видео с корректными file_id.")
+        normalized.append({"type": item["type"], "file_id": item["file_id"]})
+
+    media_json = json.dumps(normalized, ensure_ascii=False)
+    async with aiosqlite.connect(PATH_DB) as db:
+        cursor = await db.execute(
+            """
+            UPDATE users
+            SET photo_id = ?, media_json = ?
+            WHERE user_id = ? AND user_id > 0 AND is_fake = 0
+            """,
+            (normalized[0]["file_id"], media_json, user_id),
+        )
+        await db.commit()
+        updated = cursor.rowcount > 0
+
+    if updated:
+        logger.info("Updated profile media for user %s (%s item(s)).", user_id, len(normalized))
+    return updated
+
+
 async def is_profile_complete(user_id: int) -> bool:
     """
     Проверяет, заполнен ли профиль пользователя.
