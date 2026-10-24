@@ -199,8 +199,30 @@ async def fake_profile_gender(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.fake_profile_description)
     await callback.message.edit_text(
         f"Выбрано: <b>{gender}</b>\n\n"
-        "💬 <b>Шаг 4/6.</b> Введите описание анкеты (до 500 символов).",
-        reply_markup=_cancel_keyboard(),
+        "💬 <b>Шаг 4/6.</b> Введите описание анкеты (до 500 символов) или пропустите этот шаг.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⏭ Пропустить описание", callback_data="admin_fake_skip_description")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(AdminStates.fake_profile_description, F.data == "admin_fake_skip_description")
+async def fake_profile_skip_description(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет прав доступа", show_alert=True)
+        return
+    await state.update_data(fake_description="")
+    await state.set_state(AdminStates.fake_profile_location)
+    await callback.message.edit_text(
+        "Описание пропущено.\n\n"
+        "📍 <b>Шаг 5/6.</b> Поделитесь геопозицией кнопкой ниже. Город определится автоматически.",
+        reply_markup=None,
+    )
+    await callback.message.answer(
+        "Нажмите «📍 Поделиться геопозицией».",
+        reply_markup=get_location_keyboard(False),
     )
     await callback.answer()
 
@@ -211,8 +233,8 @@ async def fake_profile_description(message: Message, state: FSMContext):
         await state.clear()
         return
     description = (message.text or "").strip()
-    if not description or len(description) > 500 or contains_forbidden_content(description):
-        await message.answer("❌ Описание должно содержать 1–500 символов, без ссылок и @. Попробуйте ещё раз.")
+    if len(description) > 500 or (description and contains_forbidden_content(description)):
+        await message.answer("❌ Описание должно содержать до 500 символов, без ссылок и @. Попробуйте ещё раз.")
         return
     await state.update_data(fake_description=description)
     await state.set_state(AdminStates.fake_profile_location)
@@ -242,13 +264,21 @@ async def fake_profile_location(message: Message, state: FSMContext):
     await processing_message.edit_text(
         "✅ <b>Геопозиция получена.</b>\n\n"
         f"{city_text}"
-        "📸 <b>Шаг 6/6.</b> Отправьте фотографию для тестовой анкеты как обычное фото (не файлом).",
+        "📸 <b>Шаг 6/6.</b> Отправляйте до 3 фото или видео длительностью до 30 секунд. "
+        "Когда закончите, нажмите «Готово». Нужно добавить хотя бы один медиафайл.",
     )
-    await state.set_state(AdminStates.fake_profile_photo)
+    await state.update_data(fake_media=[])
+    await state.set_state(AdminStates.fake_profile_media)
     await message.answer(
-        "После сохранения анкета будет участвовать в обычном поиске с учётом пола, возраста и расстояния. "
-        "Анкета будет участвовать в обычном поиске с учётом фильтров.",
+        "Можно отправлять фото и видео по одному. Документы не поддерживаются.",
         reply_markup=ReplyKeyboardRemove(),
+    )
+    await message.answer(
+        "Добавьте медиафайлы, затем нажмите «Готово».",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Готово", callback_data="admin_fake_media_done")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel")],
+        ]),
     )
 
 
@@ -268,58 +298,96 @@ async def fake_profile_location_invalid(message: Message, state: FSMContext):
     )
 
 
-@router.message(AdminStates.fake_profile_photo, F.photo)
-async def fake_profile_photo(message: Message, state: FSMContext, bot: Bot):
+@router.message(AdminStates.fake_profile_media, F.photo)
+async def fake_profile_add_photo(message: Message, state: FSMContext):
+    await _add_fake_media(message, state, "photo", message.photo[-1].file_id)
+
+
+@router.message(AdminStates.fake_profile_media, F.video)
+async def fake_profile_add_video(message: Message, state: FSMContext):
+    video = message.video
+    if video.duration > 30:
+        await message.answer("❌ Видео должно длиться не более 30 секунд.")
+        return
+    await _add_fake_media(message, state, "video", video.file_id)
+
+
+async def _add_fake_media(message: Message, state: FSMContext, media_type: str, file_id: str):
     if not _is_admin(message.from_user.id):
         await state.clear()
         return
     data = await state.get_data()
-    photo_id = message.photo[-1].file_id
+    media = data.get("fake_media", [])
+    if len(media) >= 3:
+        await message.answer("Достигнут лимит: максимум 3 фото/видео. Нажмите «Готово».")
+        return
+    media.append({"type": media_type, "file_id": file_id})
+    await state.update_data(fake_media=media)
+    await message.answer(f"✅ Добавлено: {len(media)}/3. Можно отправить ещё или нажать «Готово».")
+
+
+@router.message(AdminStates.fake_profile_media)
+async def fake_profile_media_invalid(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    await message.answer("❌ Отправьте фото или видео длительностью до 30 секунд. Документы и другие типы файлов не поддерживаются.")
+
+
+@router.callback_query(AdminStates.fake_profile_media, F.data == "admin_fake_media_done")
+async def fake_profile_media_done(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет прав доступа", show_alert=True)
+        return
+    data = await state.get_data()
+    media = data.get("fake_media", [])
+    if not media:
+        await callback.answer("Сначала добавьте хотя бы одно фото или видео.", show_alert=True)
+        return
     try:
         fake_id = await create_fake_profile(
             name=data["fake_name"],
             age=data["fake_age"],
             gender=data["fake_gender"],
-            description=data["fake_description"],
-            photo_id=photo_id,
+            description=data.get("fake_description", ""),
+            photo_id=media[0]["file_id"],
             latitude=data["fake_latitude"],
             longitude=data["fake_longitude"],
             city=data.get("fake_city"),
+            media=media,
         )
     except (KeyError, ValueError) as exc:
         logger.warning("Admin demo profile validation failed: %s", type(exc).__name__)
-        await message.answer(f"❌ Не удалось создать анкету: {html.escape(str(exc))}")
+        await callback.message.answer(f"❌ Не удалось создать анкету: {html.escape(str(exc))}")
         await state.clear()
+        await callback.answer()
         return
     except Exception:
         logger.exception("Could not save an admin demo profile.")
-        await message.answer("❌ Ошибка сохранения. Проверьте логи и попробуйте снова.")
+        await callback.message.answer("❌ Ошибка сохранения. Проверьте логи и попробуйте снова.")
         await state.clear()
+        await callback.answer()
         return
 
     await state.clear()
-    await message.answer(
+    await callback.message.answer(
         f"✅ <b>Тестовая анкета создана.</b>\n\n"
         f"Внутренний ID: <code>{fake_id}</code>\n"
         f"Имя: <b>{html.escape(data['fake_name'])}</b>\n"
     )
-
-    # Show the saved profile to the administrator with dedicated management buttons.
     from viewers import ProfileDisplayer
-    displayer = await ProfileDisplayer.create(bot, message.from_user.id, fake_id)
+    displayer = await ProfileDisplayer.create(bot, callback.from_user.id, fake_id)
     if displayer and displayer.profile:
         displayer.with_data_for_admin().with_keyboard(
             lambda profile: _fake_profile_actions_keyboard(profile["user_id"])
         )
         await displayer.send()
-    await message.answer("🎭 <b>Управление тестовыми анкетами</b>", reply_markup=_fake_profiles_keyboard(await get_fake_profiles()))
+    await callback.message.answer(
+        "🎭 <b>Управление тестовыми анкетами</b>",
+        reply_markup=_fake_profiles_keyboard(await get_fake_profiles()),
+    )
+    await callback.answer("Анкета создана")
 
 
-@router.message(AdminStates.fake_profile_photo)
-async def fake_profile_photo_invalid(message: Message):
-    if not _is_admin(message.from_user.id):
-        return
-    await message.answer("❌ Нужна фотография, отправленная как обычное фото Telegram, не документом.")
 
 
 @router.callback_query(F.data.startswith("admin_fake_view:"))
