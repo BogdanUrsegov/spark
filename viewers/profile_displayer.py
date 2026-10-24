@@ -1,7 +1,8 @@
 import logging
+import json
 from aiogram import Bot
 import html
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, InputMediaPhoto, InputMediaVideo
 from typing import Callable, Optional, Union, Dict, Any
 from admin import commands as admins_commands
 from config import ADMIN_ID
@@ -15,6 +16,9 @@ from keyboards import (
 from storage.database import update_user_field
 
 logger = logging.getLogger(__name__)
+
+# Track albums so advancing removes every message in the previous profile.
+_PROFILE_MEDIA_GROUPS: dict[tuple[int, int], list[int]] = {}
 
 
 class ProfileDisplayer:
@@ -89,11 +93,11 @@ class ProfileDisplayer:
         desc = html.escape(html.unescape(profile["description"]))
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         location = ProfileDisplayer._format_location(profile.get("city"))
+        description_block = f"\n\n<b>О себе:</b>\n{desc}" if desc.strip() else ""
         return (
             f"{gender_emoji} <b>{name}, {profile['age']}</b>\n"
-            f"{location}\n\n"
-            f"<b>О себе:</b>\n"
-            f"{desc}\n"
+            f"{location}"
+            f"{description_block}\n"
         )
 
     @staticmethod
@@ -221,14 +225,14 @@ class ProfileDisplayer:
 
     async def _delete_message_safe(self, obj: Union[Message, CallbackQuery]) -> None:
         """Безопасно удаляет сообщение, игнорируя ошибки."""
-        if isinstance(obj, CallbackQuery) and obj.message:
+        message = obj.message if isinstance(obj, CallbackQuery) else obj
+        if not message:
+            return
+        group_key = (message.chat.id, message.message_id)
+        message_ids = _PROFILE_MEDIA_GROUPS.pop(group_key, [message.message_id])
+        for message_id in message_ids:
             try:
-                await obj.message.delete()
-            except Exception:
-                pass
-        elif isinstance(obj, Message):
-            try:
-                await obj.delete()
+                await self.bot.delete_message(chat_id=message.chat.id, message_id=message_id)
             except Exception:
                 pass
 
@@ -245,6 +249,72 @@ class ProfileDisplayer:
     # ОСНОВНЫЕ МЕТОДЫ ОТПРАВКИ
     # --------------------
 
+    def _profile_media_items(self) -> list[dict[str, str]]:
+        raw_media = self.profile.get("media_json") if self.profile else None
+        if raw_media:
+            try:
+                media = json.loads(raw_media)
+                if isinstance(media, list) and media:
+                    return [
+                        item for item in media
+                        if isinstance(item, dict)
+                        and item.get("type") in {"photo", "video"}
+                        and item.get("file_id")
+                    ][:3]
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Ignoring invalid media_json for profile %s", self.profile.get("user_id"))
+        return [{"type": "photo", "file_id": self.profile["photo_id"]}]
+
+    async def _send_profile_media(
+        self,
+        caption: str,
+        keyboard: InlineKeyboardMarkup,
+        reply_to_message_id: int | None = None,
+    ) -> None:
+        media_items = self._profile_media_items()
+        chat_id = self.user_id
+
+        if len(media_items) > 1:
+            album = []
+            for index, item in enumerate(media_items):
+                kwargs = {"media": item["file_id"]}
+                if index == 0:
+                    kwargs["caption"] = caption
+                if item["type"] == "video":
+                    album.append(InputMediaVideo(**kwargs))
+                else:
+                    album.append(InputMediaPhoto(**kwargs))
+            messages = await self.bot.send_media_group(
+                chat_id=chat_id,
+                media=album,
+                reply_to_message_id=reply_to_message_id,
+            )
+            first = messages[0]
+            try:
+                await self.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=first.message_id,
+                    reply_markup=keyboard,
+                )
+            except Exception:
+                logger.exception("Could not attach profile actions to the media album.")
+            ids = [message.message_id for message in messages]
+            _PROFILE_MEDIA_GROUPS[(chat_id, first.message_id)] = ids
+            return
+
+        item = media_items[0]
+        if item["type"] == "video":
+            sent = await self.bot.send_video(
+                chat_id=chat_id, video=item["file_id"], caption=caption,
+                reply_markup=keyboard, reply_to_message_id=reply_to_message_id,
+            )
+        else:
+            sent = await self.bot.send_photo(
+                chat_id=chat_id, photo=item["file_id"], caption=caption,
+                reply_markup=keyboard, reply_to_message_id=reply_to_message_id,
+            )
+        _PROFILE_MEDIA_GROUPS[(chat_id, sent.message_id)] = [sent.message_id]
+
     async def send(self) -> bool:
         """
         Отправляет новое сообщение с профилем.
@@ -258,12 +328,7 @@ class ProfileDisplayer:
         caption = self._caption_template(self.profile)
         keyboard = self._keyboard_factory(self.profile)
 
-        await self.bot.send_photo(
-            chat_id=self.user_id,
-            photo=self.profile["photo_id"],
-            caption=caption,
-            reply_markup=keyboard,
-        )
+        await self._send_profile_media(caption, keyboard)
         logger.info(f"Profile sent to user {self.user_id}")
         return True
 
@@ -307,13 +372,7 @@ class ProfileDisplayer:
         caption = self._caption_template(self.profile)
         keyboard = self._keyboard_factory(self.profile)
 
-        await self.bot.send_photo(
-            chat_id=self.user_id,
-            photo=self.profile["photo_id"],
-            caption=caption,
-            reply_markup=keyboard,
-            reply_to_message_id=reply_to_message_id
-        )
+        await self._send_profile_media(caption, keyboard, reply_to_message_id=reply_to_message_id)
         logger.info(f"Profile sent over to user {self.user_id}")
         return True
 
@@ -337,8 +396,8 @@ class ProfileDisplayer:
 
         # Определяем целевое сообщение
         target_message = message.message if isinstance(message, CallbackQuery) else message
-        if not target_message or not target_message.photo:
-            logger.warning(f"Cannot edit message: it's not a photo message or missing")
+        if not target_message or not (target_message.photo or target_message.video):
+            logger.warning("Cannot edit message: it is not a photo/video message or is missing")
             return False
 
         # Формируем обновления
