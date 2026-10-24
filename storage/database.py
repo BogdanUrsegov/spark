@@ -36,6 +36,13 @@ async def create_database() -> None:
                 is_active INTEGER DEFAULT 1
             )
         """)
+        # Add a provenance flag to existing databases without losing user profiles.
+        cursor = await db.execute("PRAGMA table_info(users)")
+        user_columns = {row[1] for row in await cursor.fetchall()}
+        if "is_fake" not in user_columns:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN is_fake INTEGER NOT NULL DEFAULT 0"
+            )
         logger.info("Users table created or already exists.")
         
         # Таблица лайков (основная для логики матчинга)
@@ -278,3 +285,126 @@ async def delete_user_profile(user_id: int) -> bool:
         else:
             logger.warning(f"No profile found to delete for user {user_id}")
         return deleted
+
+async def create_fake_profile(
+    name: str,
+    age: int,
+    gender: str,
+    description: str,
+    photo_id: str,
+    latitude: float,
+    longitude: float,
+    city: Optional[str] = None,
+) -> int:
+    """Create an admin-managed demo profile with a negative, non-Telegram ID."""
+    if not 16 <= age <= 30:
+        raise ValueError("Возраст тестовой анкеты должен быть от 16 до 30 лет.")
+    if gender not in {"Мужской", "Женский"}:
+        raise ValueError("Некорректный пол тестовой анкеты.")
+    if not name.strip() or not description.strip() or not photo_id:
+        raise ValueError("Имя, описание и фотография обязательны.")
+    if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+        raise ValueError("Координаты находятся вне допустимого диапазона.")
+
+    async with aiosqlite.connect(PATH_DB) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute(
+            "SELECT COALESCE(MIN(user_id), 0) FROM users WHERE user_id < 0"
+        )
+        current_min_id = (await cursor.fetchone())[0]
+        fake_id = min(-1, current_min_id - 1)
+
+        await db.execute(
+            """
+            INSERT INTO users (
+                user_id, username, name, age, gender, description, photo_id,
+                latitude, longitude, city, filter_gender, likes_given,
+                likes_received, mutual_likes, is_active, is_fake
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 1, 1)
+            """,
+            (
+                fake_id, name.strip(), age, gender, description.strip(), photo_id,
+                latitude, longitude, city.strip() if city else None
+            ),
+        )
+        await db.commit()
+    logger.info("Created admin demo profile with internal id %s.", fake_id)
+    return fake_id
+
+
+async def get_fake_profiles() -> list[Dict[str, Any]]:
+    """Return demo profiles for the admin panel only."""
+    async with aiosqlite.connect(PATH_DB) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT user_id, name, age, gender, city, is_active,
+                   likes_given, likes_received, mutual_likes
+            FROM users
+            WHERE is_fake = 1
+            ORDER BY user_id DESC
+            """
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def delete_fake_profile(fake_id: int) -> bool:
+    """Delete a demo profile and its likes; never delete real users here."""
+    if fake_id >= 0:
+        return False
+
+    async with aiosqlite.connect(PATH_DB) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute(
+            "SELECT user_id FROM users WHERE user_id = ? AND is_fake = 1",
+            (fake_id,),
+        )
+        if not await cursor.fetchone():
+            await db.rollback()
+            return False
+
+        await db.execute(
+            "DELETE FROM likes WHERE liker_id = ? OR liked_id = ?",
+            (fake_id, fake_id),
+        )
+        cursor = await db.execute(
+            "DELETE FROM users WHERE user_id = ? AND is_fake = 1",
+            (fake_id,),
+        )
+        deleted = cursor.rowcount > 0
+
+        # Repair real-user counters after removing their actions on this demo.
+        await db.execute(
+            """
+            UPDATE users
+            SET likes_given = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liker_id = users.user_id
+                  AND likes.action IN ('like', 'like_with_message')
+            )
+            WHERE user_id > 0
+            """
+        )
+        await db.execute(
+            """
+            UPDATE users
+            SET likes_received = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liked_id = users.user_id
+                  AND likes.action IN ('like', 'like_with_message')
+            )
+            WHERE user_id > 0
+            """
+        )
+        await db.execute(
+            """
+            UPDATE users
+            SET mutual_likes = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liker_id = users.user_id AND likes.is_mutual = 1
+            )
+            WHERE user_id > 0
+            """
+        )
+        await db.commit()
+    return deleted
