@@ -125,16 +125,36 @@ async def add_new_profile(
     photo_id: str,
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
-    city: Optional[str] = None
+    city: Optional[str] = None,
+    media: Optional[list[Dict[str, str]]] = None,
 ) -> None:
+    media_items = media or [{"type": "photo", "file_id": photo_id}]
+    if not 1 <= len(media_items) <= 3:
+        raise ValueError("Добавьте от одного до трёх фото или видео.")
+    if any(
+        not isinstance(item, dict)
+        or item.get("type") not in {"photo", "video"}
+        or not isinstance(item.get("file_id"), str)
+        or not item.get("file_id", "").strip()
+        for item in media_items
+    ):
+        raise ValueError("Поддерживаются только фото и видео с корректными file_id.")
+
+    # Keep photo_id populated for compatibility with existing queries and older clients.
+    photo_id = media_items[0]["file_id"]
+    media_json = json.dumps(media_items, ensure_ascii=False)
+
     async with aiosqlite.connect(PATH_DB) as db:
         await db.execute("""
             INSERT OR REPLACE INTO users (
-                user_id, username, name, age, gender, 
+                user_id, username, name, age, gender,
                 description, photo_id, latitude, longitude, city,
-                filter_gender, likes_given, likes_received, mutual_likes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)
-        """, (user_id, username, name, age, gender, description, photo_id, latitude, longitude, city))
+                filter_gender, likes_given, likes_received, mutual_likes, media_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?)
+        """, (
+            user_id, username, name, age, gender, description, photo_id,
+            latitude, longitude, city, media_json
+        ))
         await db.commit()
 
 
@@ -156,9 +176,9 @@ async def is_profile_complete(user_id: int) -> bool:
             logger.debug(f"Profile not found for user {user_id}")
             return False
         
-        # Описание можно пропустить только у созданных администратором анкет.
+        # Описание необязательно для реальных и созданных администратором анкет.
         name, age, gender, description, photo_id, is_fake = row
-        description_valid = bool(description and isinstance(description, str) and description.strip()) or bool(is_fake)
+        description_valid = isinstance(description, str) and len(description) <= 500
         is_complete = all([
             name and isinstance(name, str) and len(name.strip()) > 0,
             isinstance(age, int) and 16 <= age <= 30,
