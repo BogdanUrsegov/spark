@@ -13,6 +13,7 @@ from storage import (
     delete_user_profile,
     add_to_blacklist,
     remove_from_blacklist,
+    get_fake_profiles,
 )
 
 router = Router()
@@ -30,6 +31,8 @@ def get_admin_menu_kb():
     kb.button(text="✉️ Рассылка", callback_data="admin_broadcast")
     kb.button(text="🔨 Забанить пользователя", callback_data="admin_ban_user")
     kb.button(text="🔓 Разбанить пользователя", callback_data="admin_unban_user")
+    kb.button(text="🗑 Удалить анкету пользователя", callback_data="admin_delete_profile")
+    kb.button(text="🎭 Тестовые анкеты", callback_data="admin_fake_profiles")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -67,9 +70,11 @@ async def total_info_callback(callback: types.CallbackQuery):
         total_users = await get_total_users_count()
         blacklisted_users = await get_blacklisted_users_count()
         gender_counts = await get_users_by_gender()
+        fake_profiles = await get_fake_profiles()
 
         info_text = "📊 <b>Общая статистика:</b>\n\n"
-        info_text += f"👥 Всего пользователей: {total_users}\n"
+        info_text += f"👥 Реальных пользователей: {total_users}\n"
+        info_text += f"🎭 Тестовых анкет: {len(fake_profiles)}\n"
         info_text += f"🚫 В чёрном списке: {blacklisted_users}\n\n"
         info_text += "<b>Распределение по полу:</b>\n"
         for gender, count in gender_counts:
@@ -115,6 +120,13 @@ async def unban_user_start(callback: types.CallbackQuery, state: FSMContext):
     await request_user_id(callback, state, "unban")
 
 
+@router.callback_query(F.data == "admin_delete_profile")
+async def delete_profile_start(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+    await request_user_id(callback, state, "delete_profile")
+
+
 @router.callback_query(F.data == "admin_cancel")
 async def cancel_input(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -133,7 +145,7 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
         await state.clear()
         return
 
-    if not message.text.isdigit():
+    if not message.text or not message.text.strip().isdigit():
         await message.answer(
             "❌ Неверный формат. Отправьте <b>число</b> (user_id).\n"
             "Или нажмите «❌ Отмена» выше.",
@@ -142,6 +154,9 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
         return
 
     user_id = int(message.text.strip())
+    if user_id <= 0:
+        await message.answer("❌ Укажите положительный Telegram user_id реального пользователя.", reply_markup=get_cancel_kb())
+        return
     data = await state.get_data()
     action = data.get("action")
     await state.clear()
@@ -154,6 +169,14 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
         else:
             await message.answer(f"❌ Профиль пользователя {user_id} не найден.")
         await message.answer("🛠 Админ-панель", reply_markup=get_admin_menu_kb())
+
+    elif action == "delete_profile":
+        deleted = await delete_user_profile(user_id)
+        text = (
+            f"✅ Анкета пользователя {user_id} удалена."
+            if deleted else f"⚠️ Анкета пользователя {user_id} не найдена."
+        )
+        await message.answer(text, reply_markup=get_admin_menu_kb())
 
     elif action == "ban":
         deleted = await delete_user_profile(user_id)
