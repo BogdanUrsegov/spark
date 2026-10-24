@@ -70,8 +70,8 @@ async def get_next_profile_for_user(
               )
               AND (
                   ? = 0
-                  OR (? = 1 AND LOWER(u.gender) IN ('женский', 'female', 'woman'))
-                  OR (? = 2 AND LOWER(u.gender) IN ('мужской', 'male', 'man'))
+                  OR (? = 1 AND u.gender IN ('Женский', 'женский', 'female', 'woman'))
+                  OR (? = 2 AND u.gender IN ('Мужской', 'мужской', 'male', 'man'))
               )
               AND (
                   (? < 18 AND u.age < 18)
