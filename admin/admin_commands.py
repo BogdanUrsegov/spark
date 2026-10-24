@@ -32,7 +32,10 @@ async def ban_user(message: types.Message, bot: Bot):
             return
         
         user_id = int(command_args[1])
-        
+        if user_id <= 0:
+            await message.answer("❌ Укажите положительный Telegram ID реального пользователя.")
+            return
+
         deleted = await delete_user_profile(user_id)
         added_to_blacklist = await add_to_blacklist(user_id)
         
@@ -149,7 +152,10 @@ async def unban_user(message: types.Message, bot: Bot):
             return
         
         user_id = int(command_args[1])
-        
+        if user_id <= 0:
+            await message.answer("❌ Укажите положительный Telegram ID реального пользователя.")
+            return
+
         removed_from_blacklist = await remove_from_blacklist(user_id)
         
         if removed_from_blacklist:
