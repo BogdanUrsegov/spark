@@ -3,6 +3,7 @@ import aiosqlite
 from typing import Optional, Dict, Any
 from config import PATH_DB
 import logging
+import json
 from pathlib import Path
 
 
@@ -43,6 +44,8 @@ async def create_database() -> None:
             await db.execute(
                 "ALTER TABLE users ADD COLUMN is_fake INTEGER NOT NULL DEFAULT 0"
             )
+        if "media_json" not in user_columns:
+            await db.execute("ALTER TABLE users ADD COLUMN media_json TEXT")
         logger.info("Users table created or already exists.")
         
         # Таблица лайков (основная для логики матчинга)
@@ -143,7 +146,7 @@ async def is_profile_complete(user_id: int) -> bool:
     logger.debug(f"Checking profile completeness for user {user_id}")
     async with aiosqlite.connect(PATH_DB) as db:
         cursor = await db.execute("""
-            SELECT name, age, gender, description, photo_id
+            SELECT name, age, gender, description, photo_id, is_fake
             FROM users
             WHERE user_id = ?
         """, (user_id,))
@@ -153,13 +156,14 @@ async def is_profile_complete(user_id: int) -> bool:
             logger.debug(f"Profile not found for user {user_id}")
             return False
         
-        # Проверяем, что все обязательные поля не NULL и не пустые
-        name, age, gender, description, photo_id = row
+        # Описание можно пропустить только у созданных администратором анкет.
+        name, age, gender, description, photo_id, is_fake = row
+        description_valid = bool(description and isinstance(description, str) and description.strip()) or bool(is_fake)
         is_complete = all([
             name and isinstance(name, str) and len(name.strip()) > 0,
             isinstance(age, int) and 16 <= age <= 30,
             gender and isinstance(gender, str) and len(gender.strip()) > 0,
-            description and isinstance(description, str) and len(description.strip()) > 0,
+            description_valid,
             photo_id and isinstance(photo_id, str) and len(photo_id.strip()) > 0
         ])
         
@@ -333,17 +337,28 @@ async def create_fake_profile(
     latitude: float,
     longitude: float,
     city: Optional[str] = None,
+    media: Optional[list[Dict[str, str]]] = None,
 ) -> int:
-    """Create an admin-managed demo profile with a negative, non-Telegram ID."""
+    """Create an admin-managed demo profile with up to three photo/video items."""
     if not 16 <= age <= 30:
-        raise ValueError("Возраст тестовой анкеты должен быть от 16 до 30 лет.")
+        raise ValueError("Возраст анкеты должен быть от 16 до 30 лет.")
     if gender not in {"Мужской", "Женский"}:
-        raise ValueError("Некорректный пол тестовой анкеты.")
-    if not name.strip() or not description.strip() or not photo_id:
-        raise ValueError("Имя, описание и фотография обязательны.")
+        raise ValueError("Некорректный пол анкеты.")
+    if not name.strip() or len(description.strip()) > 500 or not photo_id:
+        raise ValueError("Имя, фотография и корректное описание обязательны.")
     if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
         raise ValueError("Координаты находятся вне допустимого диапазона.")
 
+    media_items = media or [{"type": "photo", "file_id": photo_id}]
+    if not 1 <= len(media_items) <= 3:
+        raise ValueError("Добавьте от одного до трёх фото или видео.")
+    if any(item.get("type") not in {"photo", "video"} or not item.get("file_id") for item in media_items):
+        raise ValueError("Поддерживаются только фото и видео.")
+    if media_items[0]["type"] != "photo":
+        # Legacy photo_id column remains non-empty for compatibility with existing code.
+        photo_id = media_items[0]["file_id"]
+
+    media_json = json.dumps(media_items, ensure_ascii=False)
     async with aiosqlite.connect(PATH_DB) as db:
         await db.execute("BEGIN IMMEDIATE")
         cursor = await db.execute(
@@ -357,18 +372,17 @@ async def create_fake_profile(
             INSERT INTO users (
                 user_id, username, name, age, gender, description, photo_id,
                 latitude, longitude, city, filter_gender, likes_given,
-                likes_received, mutual_likes, is_active, is_fake
-            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 1, 1)
+                likes_received, mutual_likes, is_active, is_fake, media_json
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 1, 1, ?)
             """,
             (
                 fake_id, name.strip(), age, gender, description.strip(), photo_id,
-                latitude, longitude, city.strip() if city else None
+                latitude, longitude, city.strip() if city else None, media_json
             ),
         )
         await db.commit()
     logger.info("Created admin demo profile with internal id %s.", fake_id)
     return fake_id
-
 
 async def get_fake_profiles() -> list[Dict[str, Any]]:
     """Return demo profiles for the admin panel only."""
