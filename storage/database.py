@@ -175,7 +175,7 @@ async def get_user_field(user_id: int, field_name: str) -> any:
         )
         row = await cursor.fetchone()
         value = row[0] if row else None
-        logger.debug(f"Retrieved field '{field_name}' for user {user_id}: {value}")
+        logger.debug("Retrieved field '%s' for user %s.", field_name, user_id)
         return value
 
 
@@ -198,7 +198,7 @@ async def update_user_field(user_id: int, field_name: str, value) -> bool:
     ⚠️ Безопасность: field_name проверяется по белому списку,
     чтобы избежать SQL-инъекций (поля нельзя параметризовать в SQLite).
     """
-    logger.info(f"Updating field '{field_name}' for user {user_id} with value '{value}'")
+    logger.info("Updating field '%s' for user %s.", field_name, user_id)
     
     if field_name not in ALLOWED_EDITABLE_FIELDS:
         logger.error(f"Attempt to edit forbidden field: {field_name}")
