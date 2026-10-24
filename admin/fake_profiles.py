@@ -92,7 +92,7 @@ async def fake_profiles_list(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Нет прав доступа", show_alert=True)
         return
     await state.clear()
-    await _show_fake_profiles(callback.message, edit=True)
+    await _show_fake_profiles(callback.message, edit=not bool(callback.message.photo))
     await callback.answer()
 
 
