@@ -1,4 +1,19 @@
+# Secrets and local configuration
+.env
+config/.env
+
+# Local databases and runtime data
 data/
 *.db
 *.sqlite
-.env
+*.sqlite3
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Logs and OS/editor files
+*.log
+.DS_Store
