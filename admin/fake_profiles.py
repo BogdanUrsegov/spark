@@ -4,13 +4,14 @@ import re
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_ID
 from states import AdminStates
+from keyboards import get_location_keyboard
 from storage import create_fake_profile, delete_fake_profile, get_fake_profiles
-from utils import contains_forbidden_content
+from utils import contains_forbidden_content, get_city_by_coords
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -105,7 +106,7 @@ async def fake_profile_create_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(AdminStates.fake_profile_name)
     await callback.message.edit_text(
-        "➕ <b>Создание тестовой анкеты — шаг 1/7</b>\n\n"
+        "➕ <b>Создание тестовой анкеты — шаг 1/6</b>\n\n"
         "Введите имя (2–30 символов).\n"
         "Это будет тестовый профиль, и в поиске он будет отмечен соответствующей меткой.",
         reply_markup=_cancel_keyboard(),
@@ -128,7 +129,7 @@ async def fake_profile_name(message: Message, state: FSMContext):
         return
     await state.update_data(fake_name=name)
     await state.set_state(AdminStates.fake_profile_age)
-    await message.answer("🔢 <b>Шаг 2/7.</b> Введите возраст (16–30).", reply_markup=_cancel_keyboard())
+    await message.answer("🔢 <b>Шаг 2/6.</b> Введите возраст (16–30).", reply_markup=_cancel_keyboard())
 
 
 @router.message(AdminStates.fake_profile_age)
@@ -142,7 +143,7 @@ async def fake_profile_age(message: Message, state: FSMContext):
         return
     await state.update_data(fake_age=int(raw_age))
     await state.set_state(AdminStates.fake_profile_gender)
-    await message.answer("👤 <b>Шаг 3/7.</b> Выберите пол:", reply_markup=_gender_keyboard())
+    await message.answer("👤 <b>Шаг 3/6.</b> Выберите пол:", reply_markup=_gender_keyboard())
 
 
 @router.callback_query(AdminStates.fake_profile_gender, F.data.startswith("admin_fake_gender:"))
@@ -158,7 +159,7 @@ async def fake_profile_gender(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.fake_profile_description)
     await callback.message.edit_text(
         f"Выбрано: <b>{gender}</b>\n\n"
-        "💬 <b>Шаг 4/7.</b> Введите описание анкеты (до 500 символов).",
+        "💬 <b>Шаг 4/6.</b> Введите описание анкеты (до 500 символов).",
         reply_markup=_cancel_keyboard(),
     )
     await callback.answer()
@@ -174,54 +175,56 @@ async def fake_profile_description(message: Message, state: FSMContext):
         await message.answer("❌ Описание должно содержать 1–500 символов, без ссылок и @. Попробуйте ещё раз.")
         return
     await state.update_data(fake_description=description)
-    await state.set_state(AdminStates.fake_profile_city)
-    await message.answer(
-        "📍 <b>Шаг 5/7.</b> Введите город. Отправьте «-», если город не нужен.",
-        reply_markup=_cancel_keyboard(),
-    )
-
-
-@router.message(AdminStates.fake_profile_city)
-async def fake_profile_city(message: Message, state: FSMContext):
-    if not _is_admin(message.from_user.id):
-        await state.clear()
-        return
-    city = (message.text or "").strip()
-    if not city or len(city) > 80 or contains_forbidden_content(city):
-        await message.answer("❌ Укажите корректное название города до 80 символов или отправьте «-».")
-        return
-    await state.update_data(fake_city=None if city == "-" else city)
     await state.set_state(AdminStates.fake_profile_location)
     await message.answer(
-        "🗺 <b>Шаг 6/7.</b> Введите координаты для поиска анкет в формате:\n"
-        "<code>55.75, 37.61</code>\n\n"
-        "Координаты нужны, чтобы тестовая анкета могла попасть в результаты геопоиска.",
-        reply_markup=_cancel_keyboard(),
+        "📍 <b>Шаг 5/6.</b> Поделитесь геопозицией кнопкой ниже — как при обычном заполнении анкеты.\n"
+        "Город определится автоматически по координатам.",
+        reply_markup=get_location_keyboard(False),
     )
 
 
-@router.message(AdminStates.fake_profile_location)
+@router.message(AdminStates.fake_profile_location, F.location)
 async def fake_profile_location(message: Message, state: FSMContext):
     if not _is_admin(message.from_user.id):
         await state.clear()
         return
-    raw = (message.text or "").strip()
-    try:
-        parts = [part.strip() for part in raw.split(",")]
-        if len(parts) != 2:
-            raise ValueError
-        latitude, longitude = map(float, parts)
-        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
-            raise ValueError
-    except ValueError:
-        await message.answer("❌ Неверные координаты. Пример: <code>55.75, 37.61</code>.")
-        return
-    await state.update_data(fake_latitude=latitude, fake_longitude=longitude)
+
+    latitude = message.location.latitude
+    longitude = message.location.longitude
+    processing_message = await message.answer("🔄 Определяю город по геопозиции…")
+    city = await get_city_by_coords(latitude, longitude)
+    await state.update_data(
+        fake_latitude=latitude,
+        fake_longitude=longitude,
+        fake_city=city if city != "Неизвестно" else None,
+    )
+    city_text = f"🏙 Город определён: <b>{html.escape(city)}</b>\n\n" if city != "Неизвестно" else ""
+    await processing_message.edit_text(
+        "✅ <b>Геопозиция получена.</b>\n\n"
+        f"{city_text}"
+        "📸 <b>Шаг 6/6.</b> Отправьте фотографию для тестовой анкеты как обычное фото (не файлом).",
+    )
     await state.set_state(AdminStates.fake_profile_photo)
     await message.answer(
-        "📸 <b>Шаг 7/7.</b> Отправьте фотографию для тестовой анкеты как обычное фото (не файлом).\n\n"
-        "После сохранения анкета будет помечена как тестовая при показе пользователям.",
-        reply_markup=_cancel_keyboard(),
+        "После сохранения анкета будет участвовать в обычном поиске с учётом пола, возраста и расстояния. "
+        "В карточке будет подпись «Тестовая анкета».",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(AdminStates.fake_profile_location)
+async def fake_profile_location_invalid(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        await state.clear()
+        return
+    if message.text and message.text.strip() == "❌ Отмена":
+        await state.clear()
+        await message.answer("Создание тестовой анкеты отменено.", reply_markup=ReplyKeyboardRemove())
+        await message.answer("🎭 <b>Управление тестовыми анкетами</b>", reply_markup=_fake_profiles_keyboard(await get_fake_profiles()))
+        return
+    await message.answer(
+        "❌ Нажмите кнопку «📍 Поделиться геопозицией» и отправьте своё местоположение.",
+        reply_markup=get_location_keyboard(False),
     )
 
 
