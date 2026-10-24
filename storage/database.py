@@ -3,6 +3,7 @@ import aiosqlite
 from typing import Optional, Dict, Any
 from config import PATH_DB
 import logging
+from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,8 @@ async def create_database() -> None:
     Вызывать один раз при инициализации бота.
     """
     logger.info("Initializing database")
+    # Ensure the database directory exists for local and Docker deployments.
+    Path(PATH_DB).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(PATH_DB) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
