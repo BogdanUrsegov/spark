@@ -11,6 +11,7 @@ os.environ.setdefault("TELEGRAM_LOG_CHANNEL_ID", "-1001234567890")
 
 database = importlib.import_module("storage.database")
 likes_storage = importlib.import_module("storage.likes")
+profiles_storage = importlib.import_module("storage.profiles")
 
 
 class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
@@ -19,13 +20,16 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
         self.db_path = str(Path(self.temp_dir.name) / "test.db")
         self.original_db_path = database.PATH_DB
         self.original_likes_db_path = likes_storage.PATH_DB
+        self.original_profiles_db_path = profiles_storage.PATH_DB
         database.PATH_DB = self.db_path
         likes_storage.PATH_DB = self.db_path
+        profiles_storage.PATH_DB = self.db_path
         await database.create_database()
 
     async def asyncTearDown(self):
         database.PATH_DB = self.original_db_path
         likes_storage.PATH_DB = self.original_likes_db_path
+        profiles_storage.PATH_DB = self.original_profiles_db_path
         self.temp_dir.cleanup()
 
     async def _create_real_profile(self, user_id=10001):
@@ -77,6 +81,14 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await database.delete_fake_profile(fake_id))
         self.assertIsNone(await database.get_user_profile(fake_id))
         self.assertIsNotNone(await database.get_user_profile(real_id))
+
+    async def test_fake_profiles_are_returned_by_the_normal_search(self):
+        real_id = await self._create_real_profile()
+        fake_id = await self._create_fake_profile()
+
+        next_profile_id = await profiles_storage.get_next_profile_for_user(real_id)
+
+        self.assertEqual(next_profile_id, fake_id)
 
     async def test_repeated_likes_do_not_inflate_counters(self):
         real_id = await self._create_real_profile()
