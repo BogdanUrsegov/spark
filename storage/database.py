@@ -345,7 +345,7 @@ async def create_fake_profile(
     if gender not in {"Мужской", "Женский"}:
         raise ValueError("Некорректный пол анкеты.")
     if not name.strip() or len(description.strip()) > 500 or not photo_id:
-        raise ValueError("Имя, фотография и корректное описание обязательны.")
+        raise ValueError("Имя и медиа обязательны; описание должно быть не длиннее 500 символов.")
     if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
         raise ValueError("Координаты находятся вне допустимого диапазона.")
 
