@@ -380,7 +380,7 @@ async def get_fake_profiles() -> list[Dict[str, Any]]:
                    likes_given, likes_received, mutual_likes
             FROM users
             WHERE is_fake = 1
-            ORDER BY user_id DESC
+            ORDER BY user_id ASC
             """
         )
         return [dict(row) for row in await cursor.fetchall()]
