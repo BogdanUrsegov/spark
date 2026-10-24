@@ -95,7 +95,7 @@ async def _show_fake_profiles(message: Message, *, edit: bool = False, page: int
         text = (
             "🎭 <b>Тестовые анкеты</b>\n\n"
             f"Создано: <b>{len(profiles)}</b>\n"
-            "Такие анкеты помечены в поиске как тестовые."
+            "Такие анкеты помогают заполнять результаты обычного поиска."
         )
     else:
         text = (
@@ -148,7 +148,7 @@ async def fake_profile_create_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "➕ <b>Создание тестовой анкеты — шаг 1/6</b>\n\n"
         "Введите имя (2–30 символов).\n"
-        "Это будет тестовый профиль, и в поиске он будет отмечен соответствующей меткой.",
+        "Профиль будет участвовать в обычном поиске наравне с реальными анкетами.",
         reply_markup=_cancel_keyboard(),
     )
     await callback.answer()
@@ -247,7 +247,7 @@ async def fake_profile_location(message: Message, state: FSMContext):
     await state.set_state(AdminStates.fake_profile_photo)
     await message.answer(
         "После сохранения анкета будет участвовать в обычном поиске с учётом пола, возраста и расстояния. "
-        "В карточке будет подпись «Тестовая анкета».",
+        "Анкета будет участвовать в обычном поиске с учётом фильтров.",
         reply_markup=ReplyKeyboardRemove(),
     )
 
