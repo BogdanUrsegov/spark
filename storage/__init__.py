@@ -6,6 +6,9 @@ from .database import (
     get_user_field,
     update_user_field,
     delete_user_profile,
+    create_fake_profile,
+    get_fake_profiles,
+    delete_fake_profile,
 )
 from .likes import save_action
 from .profiles import get_next_profile_for_user
@@ -27,6 +30,9 @@ __all__ = [
     "get_user_field",
     "update_user_field",
     "delete_user_profile",
+    "create_fake_profile",
+    "get_fake_profiles",
+    "delete_fake_profile",
     "save_action",
     "get_next_profile_for_user",
     "add_to_blacklist",
