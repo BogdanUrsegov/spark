@@ -302,7 +302,6 @@ async def fake_profile_photo(message: Message, state: FSMContext, bot: Bot):
         f"✅ <b>Тестовая анкета создана.</b>\n\n"
         f"Внутренний ID: <code>{fake_id}</code>\n"
         f"Имя: <b>{html.escape(data['fake_name'])}</b>\n"
-        "В поиске пользователи увидят заметную метку «Тестовая анкета».",
     )
 
     # Show the saved profile to the administrator with dedicated management buttons.
