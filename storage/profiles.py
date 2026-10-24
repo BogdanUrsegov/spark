@@ -62,7 +62,7 @@ async def get_next_profile_for_user(
               AND u.age BETWEEN 16 AND 30
               AND u.name IS NOT NULL AND TRIM(u.name) != ''
               AND u.gender IS NOT NULL AND TRIM(u.gender) != ''
-              AND (u.is_fake = 1 OR (u.description IS NOT NULL AND TRIM(u.description) != ''))
+              -- Description is optional for both real and admin-created profiles.
               AND u.photo_id IS NOT NULL AND TRIM(u.photo_id) != ''
               AND u.latitude BETWEEN ? AND ?
               AND NOT EXISTS (
