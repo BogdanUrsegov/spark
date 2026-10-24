@@ -50,6 +50,8 @@ async def get_next_profile_for_user(
         min_lat = max(-90.0, lat - delta_lat)
         max_lat = min(90.0, lat + delta_lat)
 
+        # Deliberately do not exclude is_fake=1: admin-created seed profiles
+        # participate in the same search eligibility rules as real profiles.
         query = """
             SELECT u.user_id, u.latitude, u.longitude
             FROM users AS u
@@ -60,7 +62,7 @@ async def get_next_profile_for_user(
               AND u.age BETWEEN 16 AND 30
               AND u.name IS NOT NULL AND TRIM(u.name) != ''
               AND u.gender IS NOT NULL AND TRIM(u.gender) != ''
-              AND u.description IS NOT NULL AND TRIM(u.description) != ''
+              -- Description is optional for both real and admin-created profiles.
               AND u.photo_id IS NOT NULL AND TRIM(u.photo_id) != ''
               AND u.latitude BETWEEN ? AND ?
               AND NOT EXISTS (
@@ -70,8 +72,8 @@ async def get_next_profile_for_user(
               )
               AND (
                   ? = 0
-                  OR (? = 1 AND LOWER(u.gender) IN ('женский', 'female', 'woman'))
-                  OR (? = 2 AND LOWER(u.gender) IN ('мужской', 'male', 'man'))
+                  OR (? = 1 AND u.gender IN ('Женский', 'женский', 'female', 'woman'))
+                  OR (? = 2 AND u.gender IN ('Мужской', 'мужской', 'male', 'man'))
               )
               AND (
                   (? < 18 AND u.age < 18)

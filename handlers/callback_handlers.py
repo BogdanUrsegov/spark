@@ -113,7 +113,7 @@ async def handle_like(callback: CallbackQuery, bot: Bot):
 async def handle_like_msg(callback: CallbackQuery, bot: Bot, state: FSMContext):
     user_id = callback.from_user.id
     target_id = int(callback.data.split(":")[1])
-    logger.info(f"User {user_id} wants to send a message to {target_id}")
+    logger.info("User %s opened the private-message flow.", user_id)
     
     await callback.answer("Вы выбрали: 💬")
 

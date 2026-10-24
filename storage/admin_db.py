@@ -25,9 +25,11 @@ async def is_user_blacklisted(user_id: int) -> bool:
 
 async def add_to_blacklist(user_id: int) -> bool:
     """
-    Добавляет пользователя в черный список.
-    Создает таблицу blacklisted_users, если её нет.
+    Добавляет реального Telegram-пользователя в чёрный список.
+    Внутренние отрицательные ID тестовых анкет блокировать нельзя.
     """
+    if user_id <= 0:
+        return False
     try:
         async with aiosqlite.connect(PATH_DB) as db:
             await db.execute("""
@@ -49,6 +51,8 @@ async def remove_from_blacklist(user_id: int) -> bool:
     """
     Удаляет пользователя из черного списка.
     """
+    if user_id <= 0:
+        return False
     try:
         async with aiosqlite.connect(PATH_DB) as db:
             cursor = await db.execute("DELETE FROM blacklisted_users WHERE user_id = ?", (user_id,))
@@ -70,7 +74,7 @@ async def get_all_user_ids() -> List[int]:
     """
     try:
         async with aiosqlite.connect(PATH_DB) as db:
-            cursor = await db.execute("SELECT user_id FROM users")
+            cursor = await db.execute("SELECT user_id FROM users WHERE user_id > 0")
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
     except Exception as e:
@@ -84,7 +88,7 @@ async def get_total_users_count() -> int:
     """
     try:
         async with aiosqlite.connect(PATH_DB) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM users")
+            cursor = await db.execute("SELECT COUNT(*) FROM users WHERE user_id > 0")
             result = await cursor.fetchone()
             return result[0] if result else 0
     except Exception as e:
@@ -98,7 +102,7 @@ async def get_blacklisted_users_count() -> int:
     """
     try:
         async with aiosqlite.connect(PATH_DB) as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM blacklisted_users")
+            cursor = await db.execute("SELECT COUNT(*) FROM blacklisted_users WHERE user_id > 0")
             result = await cursor.fetchone()
             return result[0] if result else 0
     except Exception as e:
@@ -112,7 +116,7 @@ async def get_users_by_gender() -> List[Tuple[str, int]]:
     """
     try:
         async with aiosqlite.connect(PATH_DB) as db:
-            cursor = await db.execute("SELECT gender, COUNT(*) FROM users GROUP BY gender")
+            cursor = await db.execute("SELECT gender, COUNT(*) FROM users WHERE user_id > 0 GROUP BY gender")
             return await cursor.fetchall()
     except Exception as e:
         logger.error(f"Error getting users count by gender: {e}")
