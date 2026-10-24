@@ -3,6 +3,7 @@ import aiosqlite
 from typing import Optional, Dict, Any
 from config import PATH_DB
 import logging
+from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,8 @@ async def create_database() -> None:
     Вызывать один раз при инициализации бота.
     """
     logger.info("Initializing database")
+    # Ensure the database directory exists for local and Docker deployments.
+    Path(PATH_DB).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(PATH_DB) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -51,6 +54,44 @@ async def create_database() -> None:
             )
         """)
         logger.info("Likes table created or already exists.")
+
+        # Repair mutual flags and counters that may have drifted under the old logic.
+        await db.execute("""
+            UPDATE likes AS current
+            SET is_mutual = CASE
+                WHEN current.action IN ('like', 'like_with_message')
+                 AND EXISTS (
+                    SELECT 1 FROM likes AS reverse
+                    WHERE reverse.liker_id = current.liked_id
+                      AND reverse.liked_id = current.liker_id
+                      AND reverse.action IN ('like', 'like_with_message')
+                 )
+                THEN 1 ELSE 0
+            END
+        """)
+        await db.execute("""
+            UPDATE users
+            SET likes_given = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liker_id = users.user_id
+                  AND likes.action IN ('like', 'like_with_message')
+            )
+        """)
+        await db.execute("""
+            UPDATE users
+            SET likes_received = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liked_id = users.user_id
+                  AND likes.action IN ('like', 'like_with_message')
+            )
+        """)
+        await db.execute("""
+            UPDATE users
+            SET mutual_likes = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liker_id = users.user_id AND likes.is_mutual = 1
+            )
+        """)
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS blacklisted_users (
@@ -172,7 +213,7 @@ async def get_user_field(user_id: int, field_name: str) -> any:
         )
         row = await cursor.fetchone()
         value = row[0] if row else None
-        logger.debug(f"Retrieved field '{field_name}' for user {user_id}: {value}")
+        logger.debug("Retrieved field '%s' for user %s.", field_name, user_id)
         return value
 
 
@@ -195,7 +236,7 @@ async def update_user_field(user_id: int, field_name: str, value) -> bool:
     ⚠️ Безопасность: field_name проверяется по белому списку,
     чтобы избежать SQL-инъекций (поля нельзя параметризовать в SQLite).
     """
-    logger.info(f"Updating field '{field_name}' for user {user_id} with value '{value}'")
+    logger.info("Updating field '%s' for user %s.", field_name, user_id)
     
     if field_name not in ALLOWED_EDITABLE_FIELDS:
         logger.error(f"Attempt to edit forbidden field: {field_name}")

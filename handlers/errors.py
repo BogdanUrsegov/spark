@@ -1,13 +1,14 @@
-# handlers/errors.py
 import logging
 import os
-from aiogram.types import ErrorEvent, User
 from datetime import datetime
+
+from aiogram.types import ErrorEvent, User
 
 logger = logging.getLogger(__name__)
 
+
 def extract_user_info(update) -> str:
-    """Извлекает информацию о пользователе из апдейта."""
+    """Extract minimal user metadata for debugging."""
     user: User | None = None
     if update:
         if update.message:
@@ -16,18 +17,17 @@ def extract_user_info(update) -> str:
             user = update.callback_query.from_user
         elif update.my_chat_member:
             user = update.my_chat_member.from_user
-        # добавьте другие типы апдейтов при необходимости
 
     if user:
         username = f"@{user.username}" if user.username else ""
         return f"ID: {user.id} {username} ({user.full_name})"
     return "N/A"
 
+
 async def global_error_handler(event: ErrorEvent):
     exc = event.exception
     tb = exc.__traceback__
 
-    # Основная информация об ошибке
     filename = "unknown"
     lineno = 0
     funcname = "unknown"
@@ -41,34 +41,31 @@ async def global_error_handler(event: ErrorEvent):
         lineno = tb.tb_lineno
         funcname = tb.tb_frame.f_code.co_name
 
-    # Доп. контекст
     update = event.update
     user_info = extract_user_info(update)
     update_type = "N/A"
-    payload = ""
+    payload_summary = ""
 
+    # Avoid copying message bodies or full callback payloads into the log channel.
     if update:
         if update.message:
             update_type = "message"
-            payload = f"text: {update.message.text!r}"
+            text_value = update.message.text or update.message.caption or ""
+            payload_summary = f"text/caption length: {len(text_value)}"
         elif update.callback_query:
             update_type = "callback"
-            payload = f"data: {update.callback_query.data!r}"
+            callback_data = update.callback_query.data or ""
+            payload_summary = f"callback action: {callback_data.partition(':')[0][:80]}"
         elif update.poll:
             update_type = "poll"
-        # и т.д.
 
-    # Собираем краткий, но насыщенный отчёт
     error_summary = (
-        f"🔴 <b>{type(exc).__name__}</b>: {exc}\n\n"
+        f"🔴 <b>{type(exc).__name__}</b>\n\n"
         f"👤 Пользователь: {user_info}\n"
-        f"📦 Апдейт: {update_type} | {payload[:3800]}\n"
+        f"📦 Апдейт: {update_type} | {payload_summary}\n"
         f"📁 Файл: {filename} (строка {lineno})\n"
         f"⚡ Функция: {funcname}\n"
-        f"🕒 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        # Раскомментируйте, если нужно:
-        f"\n📂 Полный путь: {full_path}"
+        f"🕒 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"📂 Путь: {full_path}"
     )
-
-    # Логируем как ERROR → в консоль и в Telegram
     logger.error(error_summary)

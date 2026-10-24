@@ -46,7 +46,7 @@ async def handle_like_message(message: Message, state: FSMContext, bot: Bot):
                         logger.exception(f"Ошибка при удалении клавиатуры при отправке сообщения от {user_id}: {e}")
                 
                 target_id = data.get("target_id")
-                logger.info(f"User {user_id} sending message to {target_id}: {message_text}")
+                logger.info("User %s submitted a private message.", user_id)
                 await state.clear()
 
                 is_mutual = await process_action(bot, user_id, target_id, "like_with_message", message_text)

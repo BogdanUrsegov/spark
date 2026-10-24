@@ -1,61 +1,86 @@
 import asyncio
-import aiohttp
 import logging
-from config import TELEGRAM_LOG_CHANNEL_ID
 
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
-async def get_city_by_coords(lat: float, lon: float, max_retries: int = 3) -> str:
-    """
-    Определяет город по координатам через Nominatim (OSM) с защитой от лимитов.
-    """
-    # zoom=10 помогает получить уровень города, а не конкретной улицы
-    from main import bot
-    url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&accept-language=ru&zoom=10"
-    
-    # ВАЖНО: Nominatim строго требует корректный User-Agent
-    headers = {"User-Agent": "StudentDatingBot/1.0 (your_bot_username)"}
-    
-    delay = 1.0  # Начальная задержка в секундах
-    
+# Nominatim's public endpoint requires a low request rate. Serialize calls and
+# leave at least one second between outgoing requests from this process.
+_NOMINATIM_LOCK = asyncio.Lock()
+_LAST_REQUEST_AT = 0.0
+_USER_AGENT = "StudentDatingBot/1.0 (+https://github.com/BogdanUrsegov/spark)"
+
+
+async def get_city_by_coords(
+    lat: float,
+    lon: float,
+    max_retries: int = 3,
+) -> str:
+    """Reverse-geocode coordinates. Network failures never escape to handlers."""
+    global _LAST_REQUEST_AT
+
+    url = "https://nominatim.openstreetmap.org/reverse"
+    params = {
+        "format": "json",
+        "lat": lat,
+        "lon": lon,
+        "accept-language": "ru",
+        "zoom": 10,
+    }
+    headers = {"User-Agent": _USER_AGENT}
+    delay = 1.0
+
     for attempt in range(max_retries):
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=5.0) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        address = data.get("address", {})
-                        
-                        # Иерархия поиска: город -> поселок городского типа -> деревня -> регион
-                        city = (
-                            address.get("city") or 
-                            address.get("town") or 
-                            address.get("village") or 
-                            address.get("state")
-                        )
-                        return city if city else "Неизвестно"
-                    
-                    elif response.status == 429:  # Too Many Requests (превышен лимит)
-                        logger.warning(f"Rate limit hit (429). Retrying in {delay}s... (Attempt {attempt + 1}/{max_retries})")
-                        await asyncio.sleep(delay)
-                        delay *= 2  # Увеличиваем задержку: 1с -> 2с -> 4с
-                        continue
-                    
-                    else:
-                        logger.error(f"Nominatim API error: {response.status}")
-                        await bot.send_message(TELEGRAM_LOG_CHANNEL_ID, f"Не получилось определить геопозицию для координат {lat}, {lon}. Код ответа: {response.status}")
-                        return "Неизвестно"
-                        
-        except asyncio.TimeoutError:
-            logger.warning(f"Timeout on attempt {attempt + 1}. Retrying in {delay}s...")
-            await asyncio.sleep(delay)
-            delay *= 2
-        except Exception as e:
-            logger.error(f"Unexpected error getting city: {e}")
-            await bot.send_message(TELEGRAM_LOG_CHANNEL_ID, f"Не получилось определить геопозицию для координат {lat}, {lon}. Код ответа: {response.status}")
-            return "Неизвестно"
+            async with _NOMINATIM_LOCK:
+                loop = asyncio.get_running_loop()
+                wait_for_rate_limit = 1.0 - (loop.time() - _LAST_REQUEST_AT)
+                if wait_for_rate_limit > 0:
+                    await asyncio.sleep(wait_for_rate_limit)
 
-    logger.error(f"Failed to get city after {max_retries} attempts for coords {lat}, {lon}")
-    await bot.send_message(TELEGRAM_LOG_CHANNEL_ID, f"Не получилось определить геопозицию для координат {lat}, {lon}. Код ответа: {response.status}")
+                timeout = aiohttp.ClientTimeout(total=8)
+                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    async with session.get(url, params=params) as response:
+                        _LAST_REQUEST_AT = loop.time()
+
+                        if response.status == 200:
+                            data = await response.json(content_type=None)
+                            address = data.get("address") or {}
+                            city = (
+                                address.get("city")
+                                or address.get("town")
+                                or address.get("village")
+                                or address.get("municipality")
+                                or address.get("state")
+                            )
+                            return city or "Неизвестно"
+
+                        if response.status == 429 or response.status >= 500:
+                            logger.warning(
+                                "Reverse geocoding returned HTTP %s (attempt %s/%s).",
+                                response.status,
+                                attempt + 1,
+                                max_retries,
+                            )
+                        else:
+                            logger.warning("Reverse geocoding returned HTTP %s.", response.status)
+                            return "Неизвестно"
+
+            if attempt + 1 < max_retries:
+                await asyncio.sleep(delay)
+                delay *= 2
+
+        except (asyncio.TimeoutError, aiohttp.ClientError, ValueError) as exc:
+            logger.warning(
+                "Reverse geocoding failed (attempt %s/%s): %s",
+                attempt + 1,
+                max_retries,
+                type(exc).__name__,
+            )
+            if attempt + 1 < max_retries:
+                await asyncio.sleep(delay)
+                delay *= 2
+
+    logger.error("Reverse geocoding failed after %s attempts.", max_retries)
     return "Неизвестно"

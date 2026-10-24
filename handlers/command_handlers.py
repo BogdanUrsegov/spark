@@ -43,10 +43,13 @@ async def cmd_help(message: types.Message):
     """
     await message.answer(
         text="🛠️ <b>Доступные команды:</b>\n"
-             "/start — начать диалог"
+             "/start — начать диалог\n"
+             "/profile — моя анкета\n"
+             "/delete_profile — удалить мою анкету\n"
+             "/support — поддержка"
     )
 
-@router.message(Command(""))
+@router.message(Command("delete_profile"))
 async def delete_my_profile(message: types.Message):
     deleted = await delete_user_profile(message.from_user.id)
     if deleted:

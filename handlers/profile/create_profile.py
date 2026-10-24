@@ -1,4 +1,3 @@
-import html
 import re
 import logging
 from aiogram import Bot, Router, F
@@ -40,10 +39,10 @@ async def fill_profile(callback: CallbackQuery, state):
 async def process_name(message: Message, state: FSMContext):
     user_id = message.from_user.id
     name = message.text.strip()
-    logger.info(f"Processing name for user {user_id}: {name}")
+    logger.info("Processing profile name for user %s.", user_id)
     
     if not (2 <= len(name) <= 30):
-        logger.warning(f"Invalid name format for user {user_id}: {name}")
+        logger.warning("Invalid profile name format for user %s.", user_id)
         await message.answer(
             "<b>❌ Имя должно содержать только буквы и быть от 2 до 30 символов.</b>\n\n"
             "Попробуй ещё раз:"
@@ -51,19 +50,19 @@ async def process_name(message: Message, state: FSMContext):
         return
 
     if not re.fullmatch(r"[а-яА-ЯёЁa-zA-Z\s]+", name):
-        logger.warning(f"Name contains invalid characters for user {user_id}: {name}")
+        logger.warning("Profile name contains invalid characters for user %s.", user_id)
         await message.answer("<b>❌ Имя должно содержать только буквы и пробелы.</b>\n\nПопробуй ещё раз:")
         return
     
     if contains_forbidden_content(name):
-        logger.warning(f"Name contains forbidden content for user {user_id}: {name}")
+        logger.warning("Profile name contains forbidden content for user %s.", user_id)
         await message.answer(
             "<b>❌ Имя не должно содержать символ '@' или ссылки.</b>\n\n"
             "Попробуй ещё раз:"
         )
         return
     
-    await state.update_data(name=html.escape(name))
+    await state.update_data(name=name)
     logger.info(f"Name validated and stored for user {user_id}")
 
     await state.set_state(FillProfile.age)
@@ -138,7 +137,7 @@ async def process_description(message: Message, state: FSMContext):
         await message.answer("<b>❌ Описание не должно содержать '@' или ссылки.</b>\n\nПопробуй ещё раз:")
         return
     
-    await state.update_data(description=html.escape(description))
+    await state.update_data(description=description)
     
     # Переход к геопозиции
     await state.set_state(FillProfile.location)
