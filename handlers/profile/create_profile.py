@@ -5,7 +5,10 @@ from config import ADMIN_ID
 from keyboards import get_back_home, get_gender_keyboard, get_location_keyboard
 from services import *
 from states import FillProfile
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import (
+    CallbackQuery, Message, ReplyKeyboardRemove,
+    InlineKeyboardButton, InlineKeyboardMarkup,
+)
 from aiogram.fsm.context import FSMContext
 from storage import add_new_profile
 from utils import contains_forbidden_content
@@ -15,6 +18,84 @@ from viewers import *
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+
+def _skip_description_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="⏭ Пропустить описание",
+            callback_data="fill_profile_skip_description",
+        )
+    ]])
+
+
+def _finish_media_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="✅ Готово",
+            callback_data="finish_profile_media",
+        )
+    ]])
+
+
+async def _ask_for_location(message: Message, state: FSMContext) -> None:
+    await state.set_state(FillProfile.location)
+    await message.answer(
+        "📍 <b>Шаг 5/6: Твоя геопозиция</b>\n\n"
+        "Нажми кнопку ниже, чтобы поделиться местоположением. "
+        "Это поможет находить интересных людей рядом с тобой!",
+        reply_markup=get_location_keyboard(False),
+    )
+
+
+async def _save_completed_profile(
+    user_id: int,
+    username: str | None,
+    bot: Bot,
+    state: FSMContext,
+    reply_message: Message,
+) -> None:
+    data = await state.get_data()
+    media_items = data.get("media", [])
+    if not media_items:
+        await reply_message.answer("❌ Сначала добавь хотя бы одно фото или видео.")
+        return
+
+    try:
+        await add_new_profile(
+            user_id=user_id,
+            username=username,
+            name=data["name"],
+            age=data["age"],
+            gender=data["gender"],
+            description=data.get("description", ""),
+            photo_id=media_items[0]["file_id"],
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
+            city=data.get("city"),
+            media=media_items,
+        )
+        logger.info("Profile created successfully for user %s", user_id)
+    except Exception as e:
+        logger.exception("Error saving profile for user %s: %s", user_id, e)
+        await reply_message.answer("❌ Произошла ошибка при сохранении профиля. Попробуйте позже.")
+        return
+
+    await state.clear()
+
+    displayer = await ProfileDisplayer.create(bot, ADMIN_ID, user_id)
+    if displayer and displayer.profile:
+        await displayer.with_data_for_admin().send_over()
+
+    await reply_message.answer(
+        f"🎉 <b>Поздравляем, {data['name']}</b> 🎉\n\n"
+        "✅ Твой профиль полностью заполнен!\n\n"
+        "<b>Теперь ты можешь искать людей рядом с тобой 🚀</b>"
+    )
+    await reply_message.answer(
+        "<i>Зайди в <b>главное меню</b> и начни искать новых друзей!</i> 👇",
+        reply_markup=get_back_home(),
+    )
 
 
 # --- Шаг 0: Начало заполнения профиля ---
@@ -119,15 +200,27 @@ async def process_gender_selection(callback: CallbackQuery, state):
     await callback.message.answer(
         "💬 <b>Шаг 4/6: Расскажи о себе!</b>\n\n"
         "Напиши короткое описание (до 500 символов).\n\n"
-        "<b><i>Расскажи, чем увлекаешься, что ищешь — всё, что хочешь, чтобы узнали о тебе!</i></b>",
-        parse_mode="HTML"
+        "<b><i>Расскажи, чем увлекаешься, что ищешь — всё, что хочешь, чтобы узнали о тебе!</i></b>\n\n"
+        "Можешь пропустить этот шаг кнопкой ниже.",
+        parse_mode="HTML",
+        reply_markup=_skip_description_keyboard(),
     )
+
+
+@router.callback_query(FillProfile.description, F.data == "fill_profile_skip_description")
+async def skip_profile_description(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(description="")
+    await callback.answer("Описание пропущено")
+    await _ask_for_location(callback.message, state)
 
 
 # --- Шаг 4: Описание (завершение) ---
 @router.message(FillProfile.description)
 async def process_description(message: Message, state: FSMContext):
     user_id = message.from_user.id
+    if message.text is None:
+        await message.answer("❌ Отправь описание текстом или пропусти этот шаг кнопкой ниже.")
+        return
     description = message.text.strip()
     
     if len(description) > 500:
@@ -140,13 +233,7 @@ async def process_description(message: Message, state: FSMContext):
     await state.update_data(description=description)
     
     # Переход к геопозиции
-    await state.set_state(FillProfile.location)
-    await message.answer(
-        "📍 <b>Шаг 5/6: Твоя геопозиция</b>\n\n"
-        "Нажми кнопку ниже, чтобы поделиться местоположением. "
-        "Это поможет находить интересных людей рядом с тобой!",
-        reply_markup=get_location_keyboard(False)
-    )
+    await _ask_for_location(message, state)
 
 
 # --- Шаг 5: Геопозиция ---
@@ -178,13 +265,18 @@ async def process_location(message: Message, state: FSMContext):
     await processing_msg.edit_text(tmp_text)
 
     # Убираем клавиатуру геопозиции, чтобы не мешала
-    await message.answer(
-        "📸 <b>Шаг 6/6: Прикрепи фото!</b>\n\n"
-        "Отправь одно фото — оно будет отображаться в твоей анкете.",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    
     await state.set_state(FillProfile.photo)
+    await message.answer(
+        "📸 <b>Шаг 6/6: Добавь фото или видео</b>\n\n"
+        "Отправляй фото и/или видео по одному. Можно добавить до 3 файлов; "
+        "длительность каждого видео — не больше 30 секунд.\n\n"
+        "Когда закончишь, нажми «✅ Готово» ниже. Нужно добавить хотя бы один файл.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await message.answer(
+        "После каждого файла появится кнопка «✅ Готово».",
+        reply_markup=_finish_media_keyboard(),
+    )
 
 
 @router.message(FillProfile.location)
@@ -194,52 +286,69 @@ async def process_location_invalid(message: Message):
         reply_markup=get_location_keyboard()
     )
 
-# --- Шаг 6: Фото (Финал) ---
-@router.message(FillProfile.photo, F.photo)
-async def process_photo(message: Message, state: FSMContext, bot: Bot):
+# --- Шаг 6: Фото и видео (Финал) ---
+@router.message(FillProfile.photo, F.photo | F.video)
+async def process_profile_media(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    photo_id = message.photo[-1].file_id
-    logger.info(f"Processing photo for user {user_id}")
+    if message.photo:
+        item = {"type": "photo", "file_id": message.photo[-1].file_id}
+    else:
+        video = message.video
+        if video.duration > 30:
+            await message.answer(
+                "❌ Видео должно длиться не больше 30 секунд. Отправь другое видео.",
+                reply_markup=_finish_media_keyboard(),
+            )
+            return
+        item = {"type": "video", "file_id": video.file_id}
 
     data = await state.get_data()
-    
-    try:
-        await add_new_profile(
-            user_id=user_id,
-            username=message.from_user.username,
-            name=data["name"],
-            age=data["age"],
-            gender=data["gender"],
-            description=data["description"],
-            photo_id=photo_id,
-            latitude=data.get("latitude"),
-            longitude=data.get("longitude"),
-            city=data.get("city")
+    media_items = list(data.get("media", []))
+    if len(media_items) >= 3:
+        await message.answer(
+            "Лимит — 3 фото/видео. Нажми «✅ Готово», чтобы сохранить анкету.",
+            reply_markup=_finish_media_keyboard(),
         )
-        logger.info(f"Profile created successfully for user {user_id}")
-    except Exception as e:
-        logger.error(f"Error saving profile for user {user_id}: {e}")
-        await message.answer("❌ Произошла ошибка при сохранении профиля. Попробуйте позже.")
         return
 
-    await state.clear()
-    
-    # Уведомление админу (опционально)
-    displayer = await ProfileDisplayer.create(bot, ADMIN_ID, user_id)
-    if displayer and displayer.profile:
-        await displayer.with_data_for_admin().send_over()
+    media_items.append(item)
+    await state.update_data(media=media_items)
+    logger.info("Received profile media %s/3 for user %s", len(media_items), user_id)
 
-    await message.answer(
-        f"🎉 <b>Поздравляем, {data['name']}</b> 🎉\n\n"
-        "✅ Твой профиль полностью заполнен!\n\n"
-        "<b>Теперь ты можешь искать людей рядом с тобой 🚀</b>"
-    )
-    await message.answer(
-        "<i>Зайди в <b>главное меню</b> и начни искать новых друзей!</i> 👇",
-        reply_markup=get_back_home()
+    if len(media_items) == 3:
+        response = "✅ Медиа добавлено (3/3). Лимит достигнут — нажми «✅ Готово»."
+    else:
+        response = (
+            f"✅ Медиа добавлено ({len(media_items)}/3). "
+            "Можешь отправить ещё или нажать «✅ Готово»."
+        )
+    await message.answer(response, reply_markup=_finish_media_keyboard())
+
+
+@router.callback_query(FillProfile.photo, F.data == "finish_profile_media")
+async def finish_profile_media(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    if not data.get("media"):
+        await callback.answer("Сначала добавь хотя бы одно фото или видео.", show_alert=True)
+        return
+
+    await callback.answer()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        logger.debug("Could not remove media keyboard for user %s", callback.from_user.id)
+
+    await _save_completed_profile(
+        user_id=callback.from_user.id,
+        username=callback.from_user.username,
+        bot=bot,
+        state=state,
+        reply_message=callback.message,
     )
 
 
 @router.message(FillProfile.photo)
-async def process_photo_invalid(message: Message):
-    await message.answer("<b>❌ Пожалуйста, отправь именно фото (не файл, не текст).</b>")
+async def process_profile_media_invalid(message: Message):
+    await message.answer(
+        "❌ Отправь фото или видео до 30 секунд. Можно добавить до трёх файлов."
+    )
