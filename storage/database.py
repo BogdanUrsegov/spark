@@ -55,6 +55,44 @@ async def create_database() -> None:
         """)
         logger.info("Likes table created or already exists.")
 
+        # Repair mutual flags and counters that may have drifted under the old logic.
+        await db.execute("""
+            UPDATE likes AS current
+            SET is_mutual = CASE
+                WHEN current.action IN ('like', 'like_with_message')
+                 AND EXISTS (
+                    SELECT 1 FROM likes AS reverse
+                    WHERE reverse.liker_id = current.liked_id
+                      AND reverse.liked_id = current.liker_id
+                      AND reverse.action IN ('like', 'like_with_message')
+                 )
+                THEN 1 ELSE 0
+            END
+        """)
+        await db.execute("""
+            UPDATE users
+            SET likes_given = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liker_id = users.user_id
+                  AND likes.action IN ('like', 'like_with_message')
+            )
+        """)
+        await db.execute("""
+            UPDATE users
+            SET likes_received = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liked_id = users.user_id
+                  AND likes.action IN ('like', 'like_with_message')
+            )
+        """)
+        await db.execute("""
+            UPDATE users
+            SET mutual_likes = (
+                SELECT COUNT(*) FROM likes
+                WHERE likes.liker_id = users.user_id AND likes.is_mutual = 1
+            )
+        """)
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS blacklisted_users (
                 user_id INTEGER PRIMARY KEY,
