@@ -127,6 +127,19 @@ async def delete_profile_start(callback: types.CallbackQuery, state: FSMContext)
     await request_user_id(callback, state, "delete_profile")
 
 
+@router.callback_query(F.data == "admin_back")
+async def admin_back_callback(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ запрещён.", show_alert=True)
+        return
+    await state.clear()
+    await callback.message.edit_text(
+        "🛠 <b>Админ-панель</b>",
+        reply_markup=get_admin_menu_kb(),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin_cancel")
 async def cancel_input(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
