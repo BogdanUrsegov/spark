@@ -11,3 +11,4 @@ class AdminStates(StatesGroup):
     fake_profile_description = State()
     fake_profile_location = State()
     fake_profile_photo = State()
+    fake_profile_media = State()
