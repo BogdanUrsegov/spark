@@ -89,9 +89,10 @@ class ProfileDisplayer:
         desc = html.escape(html.unescape(profile["description"]))
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         location = ProfileDisplayer._format_location(profile.get("city"))
+        demo_badge = "\\n🧪 <b>Тестовая анкета</b>" if profile.get("is_fake") else ""
         
         return (
-            f"{gender_emoji} <b>{name}, {profile['age']}</b>\n"
+            f"{gender_emoji} <b>{name}, {profile['age']}</b>{demo_badge}\n"
             f"{location}\n\n"
             f"<b>О себе:</b>\n"
             f"{desc}\n"
@@ -137,10 +138,17 @@ class ProfileDisplayer:
     def _with_data_for_admin_template(profile: Dict[str, Any]) -> str:
         """Анкета с отображением данных для админа"""
         base = ProfileDisplayer._default_caption_template(profile)
+        if profile.get("is_fake"):
+            return (
+                f"{base}\n"
+                "🧪 <b>Тип:</b> тестовая анкета\n"
+                f"Внутренний ID: <code>{profile['user_id']}</code>\n"
+                "<i>Для удаления используйте меню тестовых анкет.</i>"
+            )
         return (
             f"{base}\n"
             f"User ID: <code>{profile['user_id']}</code>\n"
-            f"Username: @{profile['username'] if profile['username'] else ''}\n\n"
+            f"Username: @{html.escape(profile['username']) if profile['username'] else ''}\n\n"
             f"Для быстрого бана: <code>/{admins_commands['ban_user']} {profile['user_id']}</code>"
         )
     
@@ -178,7 +186,7 @@ class ProfileDisplayer:
         return self
     
     def with_data_for_admin(self):
-        if self.user_id == ADMIN_ID:
+        if str(self.user_id) == str(ADMIN_ID):
             self._caption_template = self._with_data_for_admin_template
         return self
 
