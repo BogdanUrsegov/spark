@@ -269,22 +269,60 @@ async def update_user_field(user_id: int, field_name: str, value) -> bool:
 
 
 async def delete_user_profile(user_id: int) -> bool:
-    logger.info(f"Deleting profile for user {user_id}")
+    """Delete a real user's profile and repair counters; fake profiles use their own helper."""
+    if user_id <= 0:
+        return False
+
+    logger.info("Deleting real user profile %s.", user_id)
     async with aiosqlite.connect(PATH_DB) as db:
-        # Удаляем лайки, где пользователь — liker или liked
-        await db.execute("DELETE FROM likes WHERE liker_id = ? OR liked_id = ?", (user_id, user_id))
-
-        # Удаляем сам профиль
-        cursor = await db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-        await db.commit()
-
-        # cursor.rowcount — количество удалённых строк
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute(
+            "DELETE FROM likes WHERE liker_id = ? OR liked_id = ?",
+            (user_id, user_id),
+        )
+        cursor = await db.execute(
+            "DELETE FROM users WHERE user_id = ? AND user_id > 0",
+            (user_id,),
+        )
         deleted = cursor.rowcount > 0
         if deleted:
-            logger.info(f"Profile deleted for user {user_id}")
-        else:
-            logger.warning(f"No profile found to delete for user {user_id}")
-        return deleted
+            # Recompute the counts for real and demo profiles affected by deleted likes.
+            await db.execute(
+                """
+                UPDATE users
+                SET likes_given = (
+                    SELECT COUNT(*) FROM likes
+                    WHERE likes.liker_id = users.user_id
+                      AND likes.action IN ('like', 'like_with_message')
+                )
+                """
+            )
+            await db.execute(
+                """
+                UPDATE users
+                SET likes_received = (
+                    SELECT COUNT(*) FROM likes
+                    WHERE likes.liked_id = users.user_id
+                      AND likes.action IN ('like', 'like_with_message')
+                )
+                """
+            )
+            await db.execute(
+                """
+                UPDATE users
+                SET mutual_likes = (
+                    SELECT COUNT(*) FROM likes
+                    WHERE likes.liker_id = users.user_id AND likes.is_mutual = 1
+                )
+                """
+            )
+        await db.commit()
+
+    if deleted:
+        logger.info("Profile deleted for user %s.", user_id)
+    else:
+        logger.warning("No real profile found to delete for user %s.", user_id)
+    return deleted
 
 async def create_fake_profile(
     name: str,
