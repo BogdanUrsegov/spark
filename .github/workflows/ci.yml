@@ -1,0 +1,21 @@
+name: Python checks
+
+on:
+  push:
+    branches: ["main", "fix/security-and-core-bugs", "feature/admin-panel-fake-profiles"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile source
+        run: python -m compileall -q admin handlers keyboards middlewares services states storage telegram_logger utils viewers main.py
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
