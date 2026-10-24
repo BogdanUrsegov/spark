@@ -1,4 +1,3 @@
-import html
 import re
 import logging
 from aiogram import Bot, Router, F
@@ -67,7 +66,7 @@ async def handle_edit_name(message: Message, state: FSMContext, bot: Bot):
         await message.answer("❌ <b>Имя не должно содержать '@' или ссылки. Попробуй ещё раз:</b>")
         return
 
-    success = await update_user_field(user_id, "name", html.escape(name))
+    success = await update_user_field(user_id, "name", name)
     data = await state.get_data()
     await bot.edit_message_reply_markup(chat_id=user_id, message_id=data["message"], reply_markup=None)
     await state.clear()
@@ -133,7 +132,7 @@ async def handle_edit_description(message: Message, state: FSMContext, bot: Bot)
         )
         return
 
-    success = await update_user_field(user_id, "description", html.escape(desc))
+    success = await update_user_field(user_id, "description", desc)
     data = await state.get_data()
     await bot.edit_message_reply_markup(chat_id=user_id, message_id=data["message"], reply_markup=None)
     await state.clear()
