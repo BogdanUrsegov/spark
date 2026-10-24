@@ -369,11 +369,6 @@ async def edit_photo(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Анкета не найдена.", show_alert=True)
         return
 
-    media_items = _read_profile_media(profile)
-    if len(media_items) >= 3:
-        await callback.answer("В анкете уже 3 фото/видео.", show_alert=True)
-        return
-
     await callback.answer()
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -382,18 +377,18 @@ async def edit_photo(callback: CallbackQuery, state: FSMContext):
 
     prompt = await callback.message.answer(
         "📸 <b>Отправьте фото или видео до 30 секунд.</b>\n\n"
-        f"Можно добавить ещё {3 - len(media_items)}.",
+        "Можно добавить до 3 файлов. Новые файлы заменят прежние.",
         reply_markup=cancel_edit(),
     )
     await state.set_state(EditProfile.photo)
+    # Editing media starts a fresh set: save will replace the previous media list.
     await state.update_data(
         message=prompt.message_id,
         profile_message=callback.message.message_id,
-        media=media_items,
-        initial_media_count=len(media_items),
+        media=[],
+        initial_media_count=0,
         media_status_message=None,
     )
-
 
 @router.callback_query(EditProfile.gender, F.data.startswith("gender:"))
 async def process_edit_gender(callback: CallbackQuery, state: FSMContext, bot):
