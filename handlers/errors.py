@@ -60,7 +60,7 @@ async def global_error_handler(event: ErrorEvent):
             update_type = "poll"
 
     error_summary = (
-        f"🔴 <b>{type(exc).__name__}</b>: {type(exc).__name__}\n\n"
+        f"🔴 <b>{type(exc).__name__}</b>\n\n"
         f"👤 Пользователь: {user_info}\n"
         f"📦 Апдейт: {update_type} | {payload_summary}\n"
         f"📁 Файл: {filename} (строка {lineno})\n"
