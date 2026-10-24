@@ -1,4 +1,3 @@
-import html
 import re
 import logging
 from aiogram import Bot, Router, F
@@ -63,7 +62,7 @@ async def process_name(message: Message, state: FSMContext):
         )
         return
     
-    await state.update_data(name=html.escape(name))
+    await state.update_data(name=name)
     logger.info(f"Name validated and stored for user {user_id}")
 
     await state.set_state(FillProfile.age)
@@ -138,7 +137,7 @@ async def process_description(message: Message, state: FSMContext):
         await message.answer("<b>❌ Описание не должно содержать '@' или ссылки.</b>\n\nПопробуй ещё раз:")
         return
     
-    await state.update_data(description=html.escape(description))
+    await state.update_data(description=description)
     
     # Переход к геопозиции
     await state.set_state(FillProfile.location)
