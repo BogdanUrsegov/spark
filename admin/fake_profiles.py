@@ -37,11 +37,21 @@ def _gender_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _fake_profiles_keyboard(profiles: list[dict]) -> InlineKeyboardMarkup:
+FAKE_PROFILES_PER_PAGE = 10
+
+
+def _fake_profiles_keyboard(
+    profiles: list[dict], *, page: int = 0
+) -> InlineKeyboardMarkup:
+    total_pages = max(1, (len(profiles) + FAKE_PROFILES_PER_PAGE - 1) // FAKE_PROFILES_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * FAKE_PROFILES_PER_PAGE
+    page_profiles = profiles[start:start + FAKE_PROFILES_PER_PAGE]
+
     rows = [
         [InlineKeyboardButton(text="➕ Создать тестовую анкету", callback_data="admin_fake_create")]
     ]
-    for profile in profiles:
+    for profile in page_profiles:
         name = profile["name"]
         label = f"{name[:22]} ({profile['age']})"
         fake_id = profile["user_id"]
@@ -49,6 +59,16 @@ def _fake_profiles_keyboard(profiles: list[dict]) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=f"👤 {label}", callback_data=f"admin_fake_view:{fake_id}"),
             InlineKeyboardButton(text="🗑", callback_data=f"admin_fake_delete_prompt:{fake_id}"),
         ])
+
+    if total_pages > 1:
+        navigation = []
+        if page > 0:
+            navigation.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_fake_profiles:{page - 1}"))
+        navigation.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data=f"admin_fake_profiles:{page}"))
+        if page < total_pages - 1:
+            navigation.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"admin_fake_profiles:{page + 1}"))
+        rows.append(navigation)
+
     rows.append([InlineKeyboardButton(text="⬅️ В админ-панель", callback_data="admin_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -67,8 +87,10 @@ def _delete_confirmation_keyboard(fake_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-async def _show_fake_profiles(message: Message, *, edit: bool = False) -> None:
+async def _show_fake_profiles(message: Message, *, edit: bool = False, page: int = 0) -> None:
     profiles = await get_fake_profiles()
+    total_pages = max(1, (len(profiles) + FAKE_PROFILES_PER_PAGE - 1) // FAKE_PROFILES_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
     if profiles:
         text = (
             "🎭 <b>Тестовые анкеты</b>\n\n"
@@ -82,10 +104,13 @@ async def _show_fake_profiles(message: Message, *, edit: bool = False) -> None:
             "Нажмите «Создать», чтобы вручную заполнить профиль."
         )
 
+    if total_pages > 1:
+        text += f"\nСтраница: <b>{page + 1}/{total_pages}</b>"
+
     if edit:
-        await message.edit_text(text, reply_markup=_fake_profiles_keyboard(profiles))
+        await message.edit_text(text, reply_markup=_fake_profiles_keyboard(profiles, page=page))
     else:
-        await message.answer(text, reply_markup=_fake_profiles_keyboard(profiles))
+        await message.answer(text, reply_markup=_fake_profiles_keyboard(profiles, page=page))
 
 
 @router.callback_query(F.data == "admin_fake_profiles")
@@ -95,6 +120,21 @@ async def fake_profiles_list(callback: CallbackQuery, state: FSMContext):
         return
     await state.clear()
     await _show_fake_profiles(callback.message, edit=not bool(callback.message.photo))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_fake_profiles:"))
+async def fake_profiles_page(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("❌ Нет прав доступа", show_alert=True)
+        return
+    try:
+        page = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Некорректная страница", show_alert=True)
+        return
+    await state.clear()
+    await _show_fake_profiles(callback.message, edit=True, page=page)
     await callback.answer()
 
 
@@ -347,9 +387,16 @@ async def fake_profile_delete_confirm(callback: CallbackQuery):
     if deleted:
         await callback.answer("Тестовая анкета удалена")
         await callback.message.edit_text("✅ Тестовая анкета и связанные лайки удалены.")
+        profiles = await get_fake_profiles()
+        page = 0
+        if profiles:
+            page = min(
+                max(0, int(callback.data.rsplit(":", 1)[1]) if ":" in callback.data else 0),
+                (len(profiles) - 1) // FAKE_PROFILES_PER_PAGE,
+            )
         await callback.message.answer(
             "🎭 <b>Тестовые анкеты</b>",
-            reply_markup=_fake_profiles_keyboard(await get_fake_profiles()),
+            reply_markup=_fake_profiles_keyboard(profiles, page=page),
         )
     else:
         await callback.answer("Анкета не найдена или это реальный пользователь", show_alert=True)
