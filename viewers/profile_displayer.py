@@ -89,7 +89,7 @@ class ProfileDisplayer:
         desc = html.escape(html.unescape(profile["description"]))
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         location = ProfileDisplayer._format_location(profile.get("city"))
-        demo_badge = "\\n🧪 <b>Тестовая анкета</b>" if profile.get("is_fake") else ""
+        demo_badge = "\n🧪 <b>Тестовая анкета</b>" if profile.get("is_fake") else ""
         
         return (
             f"{gender_emoji} <b>{name}, {profile['age']}</b>{demo_badge}\n"
