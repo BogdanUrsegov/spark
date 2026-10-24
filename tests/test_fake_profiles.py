@@ -125,6 +125,24 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await database.is_profile_complete(10002))
         self.assertEqual(await profiles_storage.get_next_profile_for_user(viewer_id), 10002)
 
+    async def test_real_profile_media_can_be_extended_up_to_three(self):
+        user_id = await self._create_real_profile()
+        media = [
+            {"type": "photo", "file_id": "real-photo-1"},
+            {"type": "video", "file_id": "real-video-1"},
+            {"type": "photo", "file_id": "real-photo-2"},
+        ]
+
+        self.assertTrue(await database.set_user_profile_media(user_id, media))
+        profile = await database.get_user_profile(user_id)
+        self.assertEqual(profile["photo_id"], "real-photo-1")
+        self.assertEqual(__import__("json").loads(profile["media_json"]), media)
+
+        with self.assertRaises(ValueError):
+            await database.set_user_profile_media(user_id, media + [
+                {"type": "photo", "file_id": "real-photo-4"}
+            ])
+
     async def test_fake_delete_cannot_delete_real_users(self):
         real_id = await self._create_real_profile()
         fake_id = await self._create_fake_profile()
