@@ -9,6 +9,5 @@ class AdminStates(StatesGroup):
     fake_profile_age = State()
     fake_profile_gender = State()
     fake_profile_description = State()
-    fake_profile_city = State()
     fake_profile_location = State()
     fake_profile_photo = State()
