@@ -223,18 +223,22 @@ class ProfileDisplayer:
     # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ СООБЩЕНИЯМИ
     # --------------------
 
+    async def delete_profile_media(self, chat_id: int, message_id: int) -> None:
+        """Delete a profile message and every item in its media group."""
+        group_key = (chat_id, message_id)
+        message_ids = _PROFILE_MEDIA_GROUPS.pop(group_key, [message_id])
+        for item_message_id in message_ids:
+            try:
+                await self.bot.delete_message(chat_id=chat_id, message_id=item_message_id)
+            except Exception:
+                pass
+
     async def _delete_message_safe(self, obj: Union[Message, CallbackQuery]) -> None:
         """Безопасно удаляет сообщение, игнорируя ошибки."""
         message = obj.message if isinstance(obj, CallbackQuery) else obj
         if not message:
             return
-        group_key = (message.chat.id, message.message_id)
-        message_ids = _PROFILE_MEDIA_GROUPS.pop(group_key, [message.message_id])
-        for message_id in message_ids:
-            try:
-                await self.bot.delete_message(chat_id=message.chat.id, message_id=message_id)
-            except Exception:
-                pass
+        await self.delete_profile_media(message.chat.id, message.message_id)
 
     async def _remove_buttons_safe(self, obj: Union[Message, CallbackQuery]) -> None:
         """Безопасно убирает inline-кнопки с сообщения."""
