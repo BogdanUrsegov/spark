@@ -1,73 +1,110 @@
-import aiosqlite
 import logging
+import math
+
+import aiosqlite
+
 from config import PATH_DB
 
 logger = logging.getLogger(__name__)
 
-async def get_next_profile_for_user(user_id: int, max_radius_km: float = 2000.0) -> int | None:
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate great-circle distance while protecting against float rounding."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    a = min(1.0, max(0.0, a))
+    return 6371.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
+
+async def get_next_profile_for_user(
+    user_id: int, max_radius_km: float = 2000.0
+) -> int | None:
+    """Return the nearest eligible profile within the configured search radius.
+
+    Users under 18 are only shown other users under 18. The SQL filters by
+    latitude and eligibility; precise distance is calculated in Python so the
+    code does not depend on optional SQLite trigonometric extensions.
+    """
+    if max_radius_km < 0:
+        raise ValueError("max_radius_km must be non-negative")
+
     async with aiosqlite.connect(PATH_DB) as db:
-        # 1. Получаем координаты и фильтр текущего пользователя
         cursor = await db.execute(
-            "SELECT latitude, longitude, filter_gender FROM users WHERE user_id = ?",
-            (user_id,)
+            "SELECT latitude, longitude, filter_gender, age FROM users WHERE user_id = ?",
+            (user_id,),
         )
         user_data = await cursor.fetchone()
-        
+
         if not user_data or user_data[0] is None or user_data[1] is None:
-            logger.warning(f"User {user_id} has no location data.")
+            logger.warning("User %s has no location data.", user_id)
             return None
 
-        lat, lon, filter_gender = user_data
-        delta = max_radius_km / 111.0
-        min_lat, max_lat = lat - delta, lat + delta
-        min_lon, max_lon = lon - delta, lon + delta
+        lat, lon, filter_gender, age = user_data
+        delta_lat = max_radius_km / 111.0
+        min_lat = max(-90.0, lat - delta_lat)
+        max_lat = min(90.0, lat + delta_lat)
 
-        # 2. SQL с фильтром по полу и оптимизацией NOT EXISTS
-        # Примечание: замените 'female'/'male' на актуальные строковые значения из вашей БД
         query = """
-            SELECT u.user_id,
-                (6371 * acos(
-                    cos(radians(?)) * cos(radians(u.latitude)) *
-                    cos(radians(u.longitude) - radians(?)) +
-                    sin(radians(?)) * sin(radians(u.latitude))
-                )) AS distance
-            FROM users u
+            SELECT u.user_id, u.latitude, u.longitude
+            FROM users AS u
             WHERE u.user_id != ?
-            AND u.is_active = 1
-            AND u.latitude IS NOT NULL AND u.longitude IS NOT NULL
-            -- Быстрый фильтр по квадрату (Bounding Box)
-            AND u.latitude BETWEEN ? AND ?
-            AND u.longitude BETWEEN ? AND ?
-            -- Исключаем уже оцененных (NOT EXISTS быстрее, чем NOT IN)
-            AND NOT EXISTS (
-                SELECT 1 FROM likes l WHERE l.liker_id = ? AND l.liked_id = u.user_id
-            )
-            -- Фильтр по полу
-            AND (
-                ? = 0 OR 
-                (? = 1 AND u.gender IN ('female', 'woman')) OR 
-                (? = 2 AND u.gender IN ('male', 'man'))
-            )
-            ORDER BY distance ASC
-            LIMIT 1
+              AND u.is_active = 1
+              AND u.latitude IS NOT NULL
+              AND u.longitude IS NOT NULL
+              AND u.age BETWEEN 16 AND 30
+              AND u.name IS NOT NULL AND TRIM(u.name) != ''
+              AND u.gender IS NOT NULL AND TRIM(u.gender) != ''
+              AND u.description IS NOT NULL AND TRIM(u.description) != ''
+              AND u.photo_id IS NOT NULL AND TRIM(u.photo_id) != ''
+              AND u.latitude BETWEEN ? AND ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM likes AS l
+                  WHERE l.liker_id = ? AND l.liked_id = u.user_id
+              )
+              AND (
+                  ? = 0
+                  OR (? = 1 AND LOWER(u.gender) IN ('женский', 'female', 'woman'))
+                  OR (? = 2 AND LOWER(u.gender) IN ('мужской', 'male', 'man'))
+              )
+              AND (
+                  (? < 18 AND u.age < 18)
+                  OR (? >= 18 AND u.age >= 18)
+              )
         """
-        
         params = (
-            lat, lon, lat,          # Haversine
-            user_id,                # Исключаем себя
-            min_lat, max_lat,       # Bounding Box (широта)
-            min_lon, max_lon,       # Bounding Box (долгота)
-            user_id,                # NOT EXISTS (liker_id)
-            filter_gender,          # Фильтр (0 - любой)
-            filter_gender,          # Фильтр (1 - девушки)
-            filter_gender           # Фильтр (2 - парни)
+            user_id,
+            min_lat,
+            max_lat,
+            user_id,
+            filter_gender,
+            filter_gender,
+            filter_gender,
+            age,
+            age,
         )
-
         cursor = await db.execute(query, params)
-        row = await cursor.fetchone()
-        
-        if row:
-            logger.debug(f"Found profile {row[0]} for {user_id} (dist: {row[1]:.1f} km)")
-            return row[0]
-            
-        return None
+        candidates = await cursor.fetchall()
+
+    closest_id = None
+    closest_distance = max_radius_km
+    for candidate_id, candidate_lat, candidate_lon in candidates:
+        distance = _distance_km(lat, lon, candidate_lat, candidate_lon)
+        if distance <= closest_distance:
+            if closest_id is None or distance < closest_distance:
+                closest_id = candidate_id
+                closest_distance = distance
+
+    if closest_id is not None:
+        logger.debug(
+            "Found eligible profile for viewer %s at %.1f km.",
+            user_id,
+            closest_distance,
+        )
+    return closest_id
