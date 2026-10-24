@@ -207,10 +207,18 @@ async def process_gender_selection(callback: CallbackQuery, state):
     )
 
 
-@router.callback_query(FillProfile.description, F.data == "fill_profile_skip_description")
+@router.callback_query(F.data == "fill_profile_skip_description")
 async def skip_profile_description(callback: CallbackQuery, state: FSMContext):
+    if await state.get_state() != FillProfile.description.state:
+        await callback.answer("Этот шаг уже завершён.")
+        return
+
     await state.update_data(description="")
     await callback.answer("Описание пропущено")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        logger.debug("Could not remove skipped-description keyboard for user %s", callback.from_user.id)
     await _ask_for_location(callback.message, state)
 
 
@@ -325,8 +333,12 @@ async def process_profile_media(message: Message, state: FSMContext):
     await message.answer(response, reply_markup=_finish_media_keyboard())
 
 
-@router.callback_query(FillProfile.photo, F.data == "finish_profile_media")
+@router.callback_query(F.data == "finish_profile_media")
 async def finish_profile_media(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await state.get_state() != FillProfile.photo.state:
+        await callback.answer("Этап добавления медиа уже завершён.")
+        return
+
     data = await state.get_data()
     if not data.get("media"):
         await callback.answer("Сначала добавь хотя бы одно фото или видео.", show_alert=True)
