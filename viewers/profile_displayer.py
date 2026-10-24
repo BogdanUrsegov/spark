@@ -1,6 +1,7 @@
 import logging
 import json
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 import html
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, InputMediaPhoto, InputMediaVideo
 from typing import Callable, Optional, Union, Dict, Any
@@ -300,6 +301,12 @@ class ProfileDisplayer:
                     message_id=first.message_id,
                     reply_markup=keyboard,
                 )
+            except TelegramBadRequest as e:
+                # Telegram reports this when the requested keyboard is already attached.
+                if "message is not modified" in str(e).lower():
+                    logger.debug("Profile actions are already attached to media message %s.", first.message_id)
+                else:
+                    logger.exception("Could not attach profile actions to the media album.")
             except Exception:
                 logger.exception("Could not attach profile actions to the media album.")
             ids = [message.message_id for message in messages]
