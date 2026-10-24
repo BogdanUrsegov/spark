@@ -113,13 +113,6 @@ async def handle_like(callback: CallbackQuery, bot: Bot):
 async def handle_like_msg(callback: CallbackQuery, bot: Bot, state: FSMContext):
     user_id = callback.from_user.id
     target_id = int(callback.data.split(":")[1])
-    if target_id < 0:
-        await callback.answer("Это тестовая анкета", show_alert=True)
-        await callback.message.answer(
-            "🧪 Это тестовая анкета. Послания ей не отправляются, "
-            "но вы можете поставить обычный лайк."
-        )
-        return
     logger.info("User %s opened the private-message flow.", user_id)
     
     await callback.answer("Вы выбрали: 💬")
