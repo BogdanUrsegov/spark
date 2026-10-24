@@ -52,18 +52,18 @@ async def process_cancel_edit(callback: CallbackQuery, state: FSMContext, bot):
 async def handle_edit_name(message: Message, state: FSMContext, bot: Bot):
     user_id = message.from_user.id
     name = message.text.strip()
-    logger.info(f"Processing name update for user {user_id}: {name}")
+    logger.info("Processing profile name update for user %s.", user_id)
     
     if not (2 <= len(name) <= 30):
-        logger.warning(f"Invalid name format for user {user_id}: {name}")
+        logger.warning("Invalid profile name format for user %s.", user_id)
         await message.answer("❌ <b>Имя должно быть от 2 до 30 символов. Попробуй ещё раз:</b>")
         return
     if not re.fullmatch(r"[а-яА-ЯёЁa-zA-Z\s]+", name):
-        logger.warning(f"Name contains invalid characters for user {user_id}: {name}")
+        logger.warning("Profile name contains invalid characters for user %s.", user_id)
         await message.answer("❌ <b>Имя должно содержать только буквы и пробелы. Попробуй ещё раз:</b>")
         return
     if contains_forbidden_content(name):
-        logger.warning(f"Name contains forbidden content for user {user_id}: {name}")
+        logger.warning("Profile name contains forbidden content for user %s.", user_id)
         await message.answer("❌ <b>Имя не должно содержать '@' или ссылки. Попробуй ещё раз:</b>")
         return
 
