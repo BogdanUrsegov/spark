@@ -85,8 +85,8 @@ class ProfileDisplayer:
     @staticmethod
     def _default_caption_template(profile: Dict[str, Any]) -> str:
         """Стандартная анкета без статистики"""
-        name = html.escape(profile["name"])
-        desc = html.escape(profile["description"])
+        name = html.escape(html.unescape(profile["name"]))
+        desc = html.escape(html.unescape(profile["description"]))
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         location = ProfileDisplayer._format_location(profile.get("city"))
         
