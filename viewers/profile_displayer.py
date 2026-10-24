@@ -89,10 +89,8 @@ class ProfileDisplayer:
         desc = html.escape(html.unescape(profile["description"]))
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         location = ProfileDisplayer._format_location(profile.get("city"))
-        demo_badge = "\n🧪 <b>Тестовая анкета</b>" if profile.get("is_fake") else ""
-        
         return (
-            f"{gender_emoji} <b>{name}, {profile['age']}</b>{demo_badge}\n"
+            f"{gender_emoji} <b>{name}, {profile['age']}</b>\n"
             f"{location}\n\n"
             f"<b>О себе:</b>\n"
             f"{desc}\n"
@@ -141,7 +139,6 @@ class ProfileDisplayer:
         if profile.get("is_fake"):
             return (
                 f"{base}\n"
-                "🧪 <b>Тип:</b> тестовая анкета\n"
                 f"Внутренний ID: <code>{profile['user_id']}</code>\n"
                 "<i>Для удаления используйте меню тестовых анкет.</i>"
             )
