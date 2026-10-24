@@ -50,6 +50,8 @@ async def get_next_profile_for_user(
         min_lat = max(-90.0, lat - delta_lat)
         max_lat = min(90.0, lat + delta_lat)
 
+        # Deliberately do not exclude is_fake=1: admin-created seed profiles
+        # participate in the same search eligibility rules as real profiles.
         query = """
             SELECT u.user_id, u.latitude, u.longitude
             FROM users AS u
