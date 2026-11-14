@@ -6,13 +6,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from viewers.profile_displayer import ProfileDisplayer, _PROFILE_MEDIA_GROUPS
-
 # The configuration module validates BOT_TOKEN during import; tests use a dummy token.
 os.environ.setdefault("BOT_TOKEN", "test-token")
 os.environ.setdefault("ADMIN_ID", "1")
 os.environ.setdefault("TELEGRAM_LOG_CHANNEL_ID", "-1001234567890")
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from viewers.profile_displayer import ProfileDisplayer, _PROFILE_MEDIA_GROUPS
 
 database = importlib.import_module("storage.database")
 likes_storage = importlib.import_module("storage.likes")
