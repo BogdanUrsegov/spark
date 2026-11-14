@@ -3,6 +3,11 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from viewers.profile_displayer import ProfileDisplayer, _PROFILE_MEDIA_GROUPS
 
 # The configuration module validates BOT_TOKEN during import; tests use a dummy token.
 os.environ.setdefault("BOT_TOKEN", "test-token")
@@ -142,6 +147,57 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
             await database.set_user_profile_media(user_id, media + [
                 {"type": "photo", "file_id": "real-photo-4"}
             ])
+
+    async def test_multi_media_profile_has_separate_text_keyboard_message(self):
+        chat_id = 190001
+        messages = [
+            SimpleNamespace(message_id=501),
+            SimpleNamespace(message_id=502),
+        ]
+        controls = SimpleNamespace(message_id=503)
+        bot = SimpleNamespace(
+            send_media_group=AsyncMock(return_value=messages),
+            send_message=AsyncMock(return_value=controls),
+            delete_message=AsyncMock(),
+        )
+        displayer = ProfileDisplayer(bot, chat_id)
+        displayer.profile = {
+            "user_id": chat_id,
+            "photo_id": "photo-1",
+            "media_json": __import__("json").dumps([
+                {"type": "photo", "file_id": "photo-1"},
+                {"type": "video", "file_id": "video-1"},
+            ]),
+        }
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Мой профиль", callback_data="show_my_profile")
+        ]])
+
+        await displayer._send_profile_media("<b>Профиль</b>", keyboard)
+
+        bot.send_media_group.assert_awaited_once()
+        album_items = bot.send_media_group.await_args.kwargs["media"]
+        self.assertEqual(len(album_items), 2)
+        self.assertIsNone(album_items[0].caption)
+        bot.send_message.assert_awaited_once_with(
+            chat_id=chat_id,
+            text="<b>Профиль</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            reply_to_message_id=501,
+        )
+
+        linked_ids = [501, 502, 503]
+        self.assertEqual(_PROFILE_MEDIA_GROUPS[(chat_id, 501)], linked_ids)
+        self.assertEqual(_PROFILE_MEDIA_GROUPS[(chat_id, 503)], linked_ids)
+
+        await displayer.delete_profile_media(chat_id, 503)
+        self.assertEqual(
+            [call.kwargs["message_id"] for call in bot.delete_message.await_args_list],
+            linked_ids,
+        )
+        self.assertNotIn((chat_id, 501), _PROFILE_MEDIA_GROUPS)
+        self.assertNotIn((chat_id, 503), _PROFILE_MEDIA_GROUPS)
 
     async def test_fake_delete_cannot_delete_real_users(self):
         real_id = await self._create_real_profile()
