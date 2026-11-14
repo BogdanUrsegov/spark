@@ -228,6 +228,10 @@ class ProfileDisplayer:
         """Delete a profile message and every item in its media group."""
         group_key = (chat_id, message_id)
         message_ids = _PROFILE_MEDIA_GROUPS.pop(group_key, [message_id])
+        # Remove every alias so deleting either the album or its controls
+        # removes the entire profile exactly once.
+        for item_message_id in message_ids:
+            _PROFILE_MEDIA_GROUPS.pop((chat_id, item_message_id), None)
         for item_message_id in message_ids:
             try:
                 await self.bot.delete_message(chat_id=chat_id, message_id=item_message_id)
@@ -281,48 +285,32 @@ class ProfileDisplayer:
 
         if len(media_items) > 1:
             album = []
-            for index, item in enumerate(media_items):
+            for item in media_items:
                 kwargs = {"media": item["file_id"]}
-                if index == 0:
-                    kwargs["caption"] = caption
                 if item["type"] == "video":
                     album.append(InputMediaVideo(**kwargs))
                 else:
                     album.append(InputMediaPhoto(**kwargs))
+
+            # Telegram clients do not support inline keyboards on media albums.
+            # Send the album first, then a text card with the profile and its buttons.
             messages = await self.bot.send_media_group(
                 chat_id=chat_id,
                 media=album,
                 reply_to_message_id=reply_to_message_id,
             )
             first = messages[0]
-            try:
-                await self.bot.edit_message_reply_markup(
-                    chat_id=chat_id,
-                    message_id=first.message_id,
-                    reply_markup=keyboard,
-                )
-            except TelegramBadRequest as e:
-                # Telegram reports this when the requested keyboard is already attached.
-                error_text = str(getattr(e, "message", e)).lower()
-                if "message is not modified" in error_text or "message not modified" in error_text:
-                    logger.debug(
-                        "Profile actions are already attached to media message %s",
-                        first.message_id,
-                    )
-                else:
-                    logger.warning(
-                        "Could not attach profile actions to media message %s: %s",
-                        first.message_id,
-                        error_text,
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Could not attach profile actions to media message %s: %s",
-                    first.message_id,
-                    e,
-                )
+            controls = await self.bot.send_message(
+                chat_id=chat_id,
+                text=caption,
+                reply_markup=keyboard,
+                parse_mode="HTML",
+                reply_to_message_id=first.message_id,
+            )
             ids = [message.message_id for message in messages]
-            _PROFILE_MEDIA_GROUPS[(chat_id, first.message_id)] = ids
+            ids.append(controls.message_id)
+            for item_message_id in ids:
+                _PROFILE_MEDIA_GROUPS[(chat_id, item_message_id)] = ids
             return
 
         item = media_items[0]
@@ -419,7 +407,7 @@ class ProfileDisplayer:
 
         # Определяем целевое сообщение
         target_message = message.message if isinstance(message, CallbackQuery) else message
-        if not target_message or not (target_message.photo or target_message.video):
+        if not target_message or not (target_message.photo or target_message.video or target_message.text):
             logger.warning("Cannot edit message: it is not a photo/video message or is missing")
             return False
 
@@ -428,13 +416,22 @@ class ProfileDisplayer:
         keyboard = self._keyboard_factory(self.profile) if update_keyboard else target_message.reply_markup
 
         try:
-            await self.bot.edit_message_caption(
-                chat_id=target_message.chat.id,
-                message_id=target_message.message_id,
-                caption=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+            if target_message.text is not None:
+                await self.bot.edit_message_text(
+                    chat_id=target_message.chat.id,
+                    message_id=target_message.message_id,
+                    text=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
+            else:
+                await self.bot.edit_message_caption(
+                    chat_id=target_message.chat.id,
+                    message_id=target_message.message_id,
+                    caption=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
             logger.info(f"Profile edited for user {self.user_id} (message {target_message.message_id})")
             return True
         except Exception as e:
