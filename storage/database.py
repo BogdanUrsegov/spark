@@ -129,8 +129,8 @@ async def add_new_profile(
     media: Optional[list[Dict[str, str]]] = None,
 ) -> None:
     media_items = media or [{"type": "photo", "file_id": photo_id}]
-    if not 1 <= len(media_items) <= 3:
-        raise ValueError("Добавьте от одного до трёх фото или видео.")
+    if len(media_items) != 1:
+        raise ValueError("Добавьте одно фото или видео.")
     if any(
         not isinstance(item, dict)
         or item.get("type") not in {"photo", "video"}
@@ -162,11 +162,11 @@ async def set_user_profile_media(
     user_id: int,
     media: list[Dict[str, str]],
 ) -> bool:
-    """Replace the stored media list of a real user's profile (one to three items)."""
+    """Replace the single photo or video in a real user's profile."""
     if user_id <= 0:
         return False
-    if not isinstance(media, list) or not 1 <= len(media) <= 3:
-        raise ValueError("В анкете должно быть от одного до трёх фото или видео.")
+    if not isinstance(media, list) or len(media) != 1:
+        raise ValueError("В анкете должно быть одно фото или видео.")
 
     normalized: list[Dict[str, str]] = []
     for item in media:
@@ -398,7 +398,7 @@ async def create_fake_profile(
     city: Optional[str] = None,
     media: Optional[list[Dict[str, str]]] = None,
 ) -> int:
-    """Create an admin-managed demo profile with up to three photo/video items."""
+    """Create an admin-managed demo profile with one photo or video."""
     if not 16 <= age <= 30:
         raise ValueError("Возраст анкеты должен быть от 16 до 30 лет.")
     if gender not in {"Мужской", "Женский"}:
@@ -409,13 +409,18 @@ async def create_fake_profile(
         raise ValueError("Координаты находятся вне допустимого диапазона.")
 
     media_items = media or [{"type": "photo", "file_id": photo_id}]
-    if not 1 <= len(media_items) <= 3:
-        raise ValueError("Добавьте от одного до трёх фото или видео.")
-    if any(item.get("type") not in {"photo", "video"} or not item.get("file_id") for item in media_items):
-        raise ValueError("Поддерживаются только фото и видео.")
-    if media_items[0]["type"] != "photo":
-        # Legacy photo_id column remains non-empty for compatibility with existing code.
-        photo_id = media_items[0]["file_id"]
+    if len(media_items) != 1:
+        raise ValueError("Добавьте одно фото или видео.")
+    if any(
+        not isinstance(item, dict)
+        or item.get("type") not in {"photo", "video"}
+        or not isinstance(item.get("file_id"), str)
+        or not item.get("file_id", "").strip()
+        for item in media_items
+    ):
+        raise ValueError("Поддерживаются только фото и видео с корректными file_id.")
+    # Keep the legacy photo_id column populated for compatibility with existing queries.
+    photo_id = media_items[0]["file_id"]
 
     media_json = json.dumps(media_items, ensure_ascii=False)
     async with aiosqlite.connect(PATH_DB) as db:

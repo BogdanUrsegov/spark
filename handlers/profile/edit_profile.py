@@ -1,5 +1,4 @@
 import re
-import json
 import logging
 from aiogram import Bot, Router, F
 from config import ADMIN_ID
@@ -8,7 +7,6 @@ from services import *
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     CallbackQuery, Message, ReplyKeyboardRemove,
-    InlineKeyboardButton, InlineKeyboardMarkup,
 )
 from aiogram.fsm.context import FSMContext
 from states import EditProfile
@@ -19,54 +17,6 @@ from viewers import *
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-
-def _finish_edit_media_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Готово", callback_data="finish_edit_profile_media")
-    ]])
-
-
-def _read_profile_media(profile: dict) -> list[dict[str, str]]:
-    raw_media = profile.get("media_json")
-    if raw_media:
-        try:
-            decoded = json.loads(raw_media)
-            if isinstance(decoded, list):
-                media = [
-                    {"type": item["type"], "file_id": item["file_id"]}
-                    for item in decoded
-                    if isinstance(item, dict)
-                    and item.get("type") in {"photo", "video"}
-                    and isinstance(item.get("file_id"), str)
-                    and item.get("file_id", "").strip()
-                ]
-                if media:
-                    return media[:3]
-        except (TypeError, KeyError, json.JSONDecodeError):
-            logger.warning("Invalid media_json for profile %s; using legacy photo_id", profile.get("user_id"))
-    photo_id = profile.get("photo_id")
-    return [{"type": "photo", "file_id": photo_id}] if photo_id else []
-
-
-async def _replace_edit_media_status(
-    message: Message,
-    state: FSMContext,
-    text: str,
-) -> None:
-    data = await state.get_data()
-    previous_id = data.get("media_status_message")
-    if previous_id:
-        try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=previous_id)
-        except Exception:
-            pass
-    has_added_media = len(data.get("media", [])) > data.get("initial_media_count", 0)
-    status = await message.answer(
-        text,
-        reply_markup=_finish_edit_media_keyboard() if has_added_media else None,
-    )
-    await state.update_data(media_status_message=status.message_id)
 
 
 @router.message(EditProfile.location, F.text == "❌ Отмена")
@@ -200,78 +150,48 @@ async def handle_edit_description(message: Message, state: FSMContext, bot: Bot)
         await message.answer("⚠️ <b>Не удалось сохранить описание. Попробуйте позже</b>")
 
 
-# --- Добавление фото и видео в анкету ---
+# --- Замена одного фото или видео в анкете ---
 @router.message(EditProfile.photo, F.photo | F.video)
 async def handle_edit_profile_media(message: Message, state: FSMContext, bot: Bot):
     user_id = message.from_user.id
-    data = await state.get_data()
-    media_items = list(data.get("media", []))
-
     if message.photo:
         item = {"type": "photo", "file_id": message.photo[-1].file_id}
     else:
         video = message.video
         if video.duration > 30:
-            await _replace_edit_media_status(
-                message, state, "❌ Видео должно длиться не больше 30 секунд"
-            )
+            await message.answer("❌ Видео должно длиться не больше 30 секунд")
             return
         item = {"type": "video", "file_id": video.file_id}
 
-    if len(media_items) >= 3:
-        await _replace_edit_media_status(
-            message, state, "Лимит — 3 фото/видео. Новые файлы не добавлены"
-        )
-        return
-
-    media_items.append(item)
-    await state.update_data(media=media_items)
-    await _replace_edit_media_status(message, state, f"✅ Добавлено ({len(media_items)}/3)")
-
-
-@router.callback_query(F.data == "finish_edit_profile_media")
-async def finish_edit_profile_media(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    if await state.get_state() != EditProfile.photo.state:
-        await callback.answer("Этап редактирования уже завершён")
-        return
-
-    data = await state.get_data()
-    media_items = list(data.get("media", []))
-    if len(media_items) <= data.get("initial_media_count", len(media_items)):
-        await callback.answer("Сначала отправьте новое фото или видео", show_alert=True)
-        return
-
     try:
-        success = await set_user_profile_media(callback.from_user.id, media_items)
-    except ValueError as e:
-        await callback.answer(str(e), show_alert=True)
+        success = await set_user_profile_media(user_id, [item])
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
         return
 
     if not success:
-        await callback.answer("Не удалось сохранить медиа. Попробуйте ещё раз", show_alert=True)
+        await message.answer("⚠️ Не удалось сохранить медиа. Попробуйте ещё раз")
         return
 
-    user_id = callback.from_user.id
-    await callback.answer()
+    data = await state.get_data()
     await state.clear()
-
     displayer = await ProfileDisplayer.create(bot, user_id, user_id)
     profile_message_id = data.get("profile_message")
     if profile_message_id:
         await displayer.delete_profile_media(user_id, profile_message_id)
 
-    for message_id in {data.get("message"), data.get("media_status_message")}:
-        if message_id:
-            try:
-                await bot.delete_message(chat_id=user_id, message_id=message_id)
-            except Exception:
-                pass
+    prompt_id = data.get("message")
+    if prompt_id:
+        try:
+            await bot.delete_message(chat_id=user_id, message_id=prompt_id)
+        except Exception:
+            pass
 
-    await bot.send_message(user_id, "✅ Медиа анкеты обновлено")
+    await message.answer("✅ Медиа анкеты обновлено")
     if displayer and displayer.profile:
         await displayer.with_stats().with_profile_keyboard().send()
     else:
-        await bot.send_message(user_id, "⚠️ Не удалось показать обновлённую анкету")
+        await message.answer("⚠️ Не удалось показать обновлённую анкету")
 
     admin_displayer = await ProfileDisplayer.create(bot, ADMIN_ID, user_id)
     if admin_displayer and admin_displayer.profile:
@@ -280,8 +200,7 @@ async def finish_edit_profile_media(callback: CallbackQuery, state: FSMContext, 
 
 @router.message(EditProfile.photo)
 async def handle_edit_profile_media_invalid(message: Message):
-    await message.answer("❌ Отправьте фото или видео до 30 секунд")
-
+    await message.answer("❌ Отправьте одно фото или видео длительностью до 30 секунд")
 
 @router.callback_query(F.data == "edit_profile")
 async def edit_profile(callback: CallbackQuery):
@@ -376,8 +295,8 @@ async def edit_photo(callback: CallbackQuery, state: FSMContext):
         pass
 
     prompt = await callback.message.answer(
-        "📸 <b>Отправьте фото или видео до 30 секунд.</b>\n\n"
-        "Можно добавить до 3 файлов. Новые файлы заменят прежние",
+        "📸 <b>Отправьте одно фото или видео до 30 секунд.</b>\n\n"
+        "Новое медиа заменит прежнее",
         reply_markup=cancel_edit(),
     )
     await state.set_state(EditProfile.photo)
@@ -385,9 +304,6 @@ async def edit_photo(callback: CallbackQuery, state: FSMContext):
     await state.update_data(
         message=prompt.message_id,
         profile_message=callback.message.message_id,
-        media=[],
-        initial_media_count=0,
-        media_status_message=None,
     )
 
 @router.callback_query(EditProfile.gender, F.data.startswith("gender:"))

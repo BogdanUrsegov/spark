@@ -29,15 +29,6 @@ def _skip_description_keyboard() -> InlineKeyboardMarkup:
     ]])
 
 
-def _finish_media_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="✅ Готово",
-            callback_data="finish_profile_media",
-        )
-    ]])
-
-
 async def _ask_for_location(message: Message, state: FSMContext) -> None:
     await state.set_state(FillProfile.location)
     await message.answer(
@@ -276,7 +267,7 @@ async def process_location(message: Message, state: FSMContext):
     await state.set_state(FillProfile.photo)
     await message.answer(
         "📸 <b>Шаг 6/6: Добавь фото или видео</b>\n\n"
-        "Отправь до 3 фото и/или видео (до 30 секунд каждое)",
+        "Отправь одно фото или видео (до 30 секунд)",
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -288,73 +279,30 @@ async def process_location_invalid(message: Message):
         reply_markup=get_location_keyboard()
     )
 
-# --- Шаг 6: Фото и видео (Финал) ---
+# --- Шаг 6: Одно фото или видео (Финал) ---
 @router.message(FillProfile.photo, F.photo | F.video)
-async def process_profile_media(message: Message, state: FSMContext):
+async def process_profile_media(message: Message, state: FSMContext, bot: Bot):
     user_id = message.from_user.id
     if message.photo:
         item = {"type": "photo", "file_id": message.photo[-1].file_id}
     else:
         video = message.video
         if video.duration > 30:
-            await message.answer(
-                "❌ Видео должно длиться не больше 30 секунд. Отправь другое видео",
-                reply_markup=_finish_media_keyboard(),
-            )
+            await message.answer("❌ Видео должно длиться не больше 30 секунд. Отправь другое видео")
             return
         item = {"type": "video", "file_id": video.file_id}
 
-    data = await state.get_data()
-    media_items = list(data.get("media", []))
-    if len(media_items) >= 3:
-        await message.answer(
-            "Лимит — 3 фото/видео. Нажми «✅ Готово», чтобы сохранить анкету",
-            reply_markup=_finish_media_keyboard(),
-        )
-        return
-
-    media_items.append(item)
-    await state.update_data(media=media_items)
-    logger.info("Received profile media %s/3 for user %s", len(media_items), user_id)
-
-    if len(media_items) == 3:
-        response = "✅ Медиа добавлено (3/3). Лимит достигнут — нажми «✅ Готово»"
-    else:
-        response = (
-            f"✅ Медиа добавлено ({len(media_items)}/3). "
-            "Можешь отправить ещё или нажать «✅ Готово»"
-        )
-    await message.answer(response, reply_markup=_finish_media_keyboard())
-
-
-@router.callback_query(F.data == "finish_profile_media")
-async def finish_profile_media(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    if await state.get_state() != FillProfile.photo.state:
-        await callback.answer("Этап добавления медиа уже завершён")
-        return
-
-    data = await state.get_data()
-    if not data.get("media"):
-        await callback.answer("Сначала добавь хотя бы одно фото или видео", show_alert=True)
-        return
-
-    await callback.answer()
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        logger.debug("Could not remove media keyboard for user %s", callback.from_user.id)
-
+    await state.update_data(media=[item])
+    logger.info("Received the single profile media item for user %s", user_id)
     await _save_completed_profile(
-        user_id=callback.from_user.id,
-        username=callback.from_user.username,
+        user_id=user_id,
+        username=message.from_user.username,
         bot=bot,
         state=state,
-        reply_message=callback.message,
+        reply_message=message,
     )
 
 
 @router.message(FillProfile.photo)
 async def process_profile_media_invalid(message: Message):
-    await message.answer(
-        "❌ Отправь фото или видео до 30 секунд. Можно добавить до трёх файлов"
-    )
+    await message.answer("❌ Отправь одно фото или видео длительностью до 30 секунд")

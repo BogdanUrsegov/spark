@@ -12,7 +12,7 @@ os.environ.setdefault("ADMIN_ID", "1")
 os.environ.setdefault("TELEGRAM_LOG_CHANNEL_ID", "-1001234567890")
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from viewers.profile_displayer import ProfileDisplayer, _PROFILE_MEDIA_GROUPS
+from viewers.profile_displayer import ProfileDisplayer
 
 database = importlib.import_module("storage.database")
 likes_storage = importlib.import_module("storage.likes")
@@ -75,12 +75,8 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
         listed = await database.get_fake_profiles()
         self.assertEqual([item["user_id"] for item in listed], [fake_id])
 
-    async def test_fake_profile_can_skip_description_and_store_multiple_media(self):
-        media = [
-            {"type": "photo", "file_id": "photo-1"},
-            {"type": "video", "file_id": "video-1"},
-            {"type": "photo", "file_id": "photo-2"},
-        ]
+    async def test_fake_profile_can_skip_description_and_store_one_media(self):
+        media = [{"type": "photo", "file_id": "photo-1"}]
         fake_id = await database.create_fake_profile(
             name="Demo",
             age=22,
@@ -96,20 +92,26 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
         profile = await database.get_user_profile(fake_id)
         self.assertEqual(profile["description"], "")
         self.assertTrue(await database.is_profile_complete(fake_id))
+        self.assertEqual(__import__("json").loads(profile["media_json"]), media)
         self.assertEqual(
-            __import__("json").loads(profile["media_json"]),
-            media,
+            await profiles_storage.get_next_profile_for_user(await self._create_real_profile()),
+            fake_id,
         )
-        self.assertEqual(await profiles_storage.get_next_profile_for_user(await self._create_real_profile()), fake_id)
+        with self.assertRaises(ValueError):
+            await database.create_fake_profile(
+                name="Another",
+                age=22,
+                gender="Женский",
+                description="",
+                photo_id="photo-1",
+                latitude=55.76,
+                longitude=37.62,
+                city="Москва",
+                media=media + [{"type": "photo", "file_id": "photo-2"}],
+            )
 
-    async def test_real_profile_can_skip_description_and_store_multiple_media(self):
+    async def test_real_profile_stores_one_media_and_rejects_multiple(self):
         viewer_id = await self._create_real_profile()
-        media = [
-            {"type": "photo", "file_id": "real-photo-1"},
-            {"type": "video", "file_id": "real-video-1"},
-            {"type": "photo", "file_id": "real-photo-2"},
-        ]
-
         await database.add_new_profile(
             user_id=10002,
             username="real_user_with_media",
@@ -117,56 +119,63 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
             age=23,
             gender="Женский",
             description="",
-            photo_id=media[0]["file_id"],
+            photo_id="real-photo-1",
             latitude=55.76,
             longitude=37.62,
             city="Москва",
-            media=media,
+            media=[{"type": "photo", "file_id": "real-photo-1"}],
         )
 
         profile = await database.get_user_profile(10002)
-        self.assertEqual(profile["description"], "")
-        self.assertEqual(__import__("json").loads(profile["media_json"]), media)
+        self.assertEqual(__import__("json").loads(profile["media_json"]), [
+            {"type": "photo", "file_id": "real-photo-1"}
+        ])
         self.assertTrue(await database.is_profile_complete(10002))
         self.assertEqual(await profiles_storage.get_next_profile_for_user(viewer_id), 10002)
-
-    async def test_real_profile_media_can_be_extended_up_to_three(self):
-        user_id = await self._create_real_profile()
-        media = [
-            {"type": "photo", "file_id": "real-photo-1"},
-            {"type": "video", "file_id": "real-video-1"},
-            {"type": "photo", "file_id": "real-photo-2"},
-        ]
-
-        self.assertTrue(await database.set_user_profile_media(user_id, media))
-        profile = await database.get_user_profile(user_id)
-        self.assertEqual(profile["photo_id"], "real-photo-1")
-        self.assertEqual(__import__("json").loads(profile["media_json"]), media)
-
         with self.assertRaises(ValueError):
-            await database.set_user_profile_media(user_id, media + [
-                {"type": "photo", "file_id": "real-photo-4"}
+            await database.add_new_profile(
+                user_id=10003,
+                username="too_many_media",
+                name="Too Many",
+                age=23,
+                gender="Женский",
+                description="",
+                photo_id="photo-1",
+                media=[
+                    {"type": "photo", "file_id": "photo-1"},
+                    {"type": "photo", "file_id": "photo-2"},
+                ],
+            )
+
+    async def test_profile_media_replacement_requires_one_item(self):
+        user_id = await self._create_real_profile()
+        self.assertTrue(await database.set_user_profile_media(
+            user_id, [{"type": "video", "file_id": "new-video"}]
+        ))
+        profile = await database.get_user_profile(user_id)
+        self.assertEqual(profile["photo_id"], "new-video")
+        self.assertEqual(__import__("json").loads(profile["media_json"]), [
+            {"type": "video", "file_id": "new-video"}
+        ])
+        with self.assertRaises(ValueError):
+            await database.set_user_profile_media(user_id, [
+                {"type": "photo", "file_id": "photo-1"},
+                {"type": "video", "file_id": "video-1"},
             ])
 
-    async def test_multi_media_profile_has_separate_text_keyboard_message(self):
+    async def test_profile_displayer_attaches_keyboard_to_single_video(self):
         chat_id = 190001
-        messages = [
-            SimpleNamespace(message_id=501),
-            SimpleNamespace(message_id=502),
-        ]
-        controls = SimpleNamespace(message_id=503)
+        sent = SimpleNamespace(message_id=501)
         bot = SimpleNamespace(
-            send_media_group=AsyncMock(return_value=messages),
-            send_message=AsyncMock(return_value=controls),
-            delete_message=AsyncMock(),
+            send_video=AsyncMock(return_value=sent),
+            send_photo=AsyncMock(return_value=sent),
         )
         displayer = ProfileDisplayer(bot, chat_id)
         displayer.profile = {
             "user_id": chat_id,
-            "photo_id": "photo-1",
+            "photo_id": "video-1",
             "media_json": __import__("json").dumps([
-                {"type": "photo", "file_id": "photo-1"},
-                {"type": "video", "file_id": "video-1"},
+                {"type": "video", "file_id": "video-1"}
             ]),
         }
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -175,29 +184,38 @@ class FakeProfileStorageTests(unittest.IsolatedAsyncioTestCase):
 
         await displayer._send_profile_media("<b>Профиль</b>", keyboard)
 
-        bot.send_media_group.assert_awaited_once()
-        album_items = bot.send_media_group.await_args.kwargs["media"]
-        self.assertEqual(len(album_items), 2)
-        self.assertIsNone(album_items[0].caption)
-        bot.send_message.assert_awaited_once_with(
+        bot.send_video.assert_awaited_once_with(
             chat_id=chat_id,
-            text="<b>Профиль</b>",
+            video="video-1",
+            caption="<b>Профиль</b>",
             reply_markup=keyboard,
-            parse_mode="HTML",
-            reply_to_message_id=501,
+            reply_to_message_id=None,
         )
+        bot.send_photo.assert_not_awaited()
 
-        linked_ids = [501, 502, 503]
-        self.assertEqual(_PROFILE_MEDIA_GROUPS[(chat_id, 501)], linked_ids)
-        self.assertEqual(_PROFILE_MEDIA_GROUPS[(chat_id, 503)], linked_ids)
-
-        await displayer.delete_profile_media(chat_id, 503)
-        self.assertEqual(
-            [call.kwargs["message_id"] for call in bot.delete_message.await_args_list],
-            linked_ids,
+    async def test_profile_displayer_uses_first_item_from_legacy_multi_media(self):
+        chat_id = 190002
+        sent = SimpleNamespace(message_id=502)
+        bot = SimpleNamespace(
+            send_photo=AsyncMock(return_value=sent),
+            send_video=AsyncMock(return_value=sent),
         )
-        self.assertNotIn((chat_id, 501), _PROFILE_MEDIA_GROUPS)
-        self.assertNotIn((chat_id, 503), _PROFILE_MEDIA_GROUPS)
+        displayer = ProfileDisplayer(bot, chat_id)
+        displayer.profile = {
+            "user_id": chat_id,
+            "photo_id": "photo-1",
+            "media_json": __import__("json").dumps([
+                {"type": "photo", "file_id": "photo-1"},
+                {"type": "video", "file_id": "video-1"},
+                {"type": "photo", "file_id": "photo-2"},
+            ]),
+        }
+
+        await displayer._send_profile_media("Профиль", InlineKeyboardMarkup(inline_keyboard=[]))
+
+        bot.send_photo.assert_awaited_once()
+        self.assertEqual(bot.send_photo.await_args.kwargs["photo"], "photo-1")
+        bot.send_video.assert_not_awaited()
 
     async def test_fake_delete_cannot_delete_real_users(self):
         real_id = await self._create_real_profile()

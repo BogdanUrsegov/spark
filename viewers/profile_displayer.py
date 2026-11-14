@@ -3,7 +3,7 @@ import json
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 import html
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, InputMediaPhoto, InputMediaVideo
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from typing import Callable, Optional, Union, Dict, Any
 from admin import commands as admins_commands
 from config import ADMIN_ID
@@ -18,8 +18,6 @@ from storage.database import update_user_field
 
 logger = logging.getLogger(__name__)
 
-# Track albums so advancing removes every message in the previous profile.
-_PROFILE_MEDIA_GROUPS: dict[tuple[int, int], list[int]] = {}
 
 
 class ProfileDisplayer:
@@ -225,18 +223,11 @@ class ProfileDisplayer:
     # --------------------
 
     async def delete_profile_media(self, chat_id: int, message_id: int) -> None:
-        """Delete a profile message and every item in its media group."""
-        group_key = (chat_id, message_id)
-        message_ids = _PROFILE_MEDIA_GROUPS.pop(group_key, [message_id])
-        # Remove every alias so deleting either the album or its controls
-        # removes the entire profile exactly once.
-        for item_message_id in message_ids:
-            _PROFILE_MEDIA_GROUPS.pop((chat_id, item_message_id), None)
-        for item_message_id in message_ids:
-            try:
-                await self.bot.delete_message(chat_id=chat_id, message_id=item_message_id)
-            except Exception:
-                pass
+        """Delete one profile media message."""
+        try:
+            await self.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception:
+            pass
 
     async def _delete_message_safe(self, obj: Union[Message, CallbackQuery]) -> None:
         """Безопасно удаляет сообщение, игнорируя ошибки"""
@@ -258,21 +249,25 @@ class ProfileDisplayer:
     # ОСНОВНЫЕ МЕТОДЫ ОТПРАВКИ
     # --------------------
 
-    def _profile_media_items(self) -> list[dict[str, str]]:
+    def _profile_media_item(self) -> dict[str, str]:
+        """Return one media item, falling back to the legacy photo_id column."""
         raw_media = self.profile.get("media_json") if self.profile else None
         if raw_media:
             try:
                 media = json.loads(raw_media)
-                if isinstance(media, list) and media:
-                    return [
-                        item for item in media
-                        if isinstance(item, dict)
-                        and item.get("type") in {"photo", "video"}
-                        and item.get("file_id")
-                    ][:3]
+                if isinstance(media, list):
+                    # Older profiles may still contain several files; display only the first.
+                    for item in media:
+                        if (
+                            isinstance(item, dict)
+                            and item.get("type") in {"photo", "video"}
+                            and isinstance(item.get("file_id"), str)
+                            and item["file_id"].strip()
+                        ):
+                            return {"type": item["type"], "file_id": item["file_id"]}
             except (TypeError, json.JSONDecodeError):
                 logger.warning("Ignoring invalid media_json for profile %s", self.profile.get("user_id"))
-        return [{"type": "photo", "file_id": self.profile["photo_id"]}]
+        return {"type": "photo", "file_id": self.profile["photo_id"]}
 
     async def _send_profile_media(
         self,
@@ -280,51 +275,24 @@ class ProfileDisplayer:
         keyboard: InlineKeyboardMarkup,
         reply_to_message_id: int | None = None,
     ) -> None:
-        media_items = self._profile_media_items()
+        item = self._profile_media_item()
         chat_id = self.user_id
-
-        if len(media_items) > 1:
-            album = []
-            for item in media_items:
-                kwargs = {"media": item["file_id"]}
-                if item["type"] == "video":
-                    album.append(InputMediaVideo(**kwargs))
-                else:
-                    album.append(InputMediaPhoto(**kwargs))
-
-            # Telegram clients do not support inline keyboards on media albums.
-            # Send the album first, then a text card with the profile and its buttons.
-            messages = await self.bot.send_media_group(
+        if item["type"] == "video":
+            await self.bot.send_video(
                 chat_id=chat_id,
-                media=album,
+                video=item["file_id"],
+                caption=caption,
+                reply_markup=keyboard,
                 reply_to_message_id=reply_to_message_id,
             )
-            first = messages[0]
-            controls = await self.bot.send_message(
-                chat_id=chat_id,
-                text=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML",
-                reply_to_message_id=first.message_id,
-            )
-            ids = [message.message_id for message in messages]
-            ids.append(controls.message_id)
-            for item_message_id in ids:
-                _PROFILE_MEDIA_GROUPS[(chat_id, item_message_id)] = ids
-            return
-
-        item = media_items[0]
-        if item["type"] == "video":
-            sent = await self.bot.send_video(
-                chat_id=chat_id, video=item["file_id"], caption=caption,
-                reply_markup=keyboard, reply_to_message_id=reply_to_message_id,
-            )
         else:
-            sent = await self.bot.send_photo(
-                chat_id=chat_id, photo=item["file_id"], caption=caption,
-                reply_markup=keyboard, reply_to_message_id=reply_to_message_id,
+            await self.bot.send_photo(
+                chat_id=chat_id,
+                photo=item["file_id"],
+                caption=caption,
+                reply_markup=keyboard,
+                reply_to_message_id=reply_to_message_id,
             )
-        _PROFILE_MEDIA_GROUPS[(chat_id, sent.message_id)] = [sent.message_id]
 
     async def send(self) -> bool:
         """
