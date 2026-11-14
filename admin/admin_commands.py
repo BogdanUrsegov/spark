@@ -22,7 +22,7 @@ async def ban_user(message: types.Message, bot: Bot):
     и добавляет в черный список в базе данных.
     """
     if str(message.from_user.id) != ADMIN_ID:
-        await message.answer("❌ У вас нет прав администратора для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав администратора для выполнения этой команды")
         return
     
     try:
@@ -33,26 +33,26 @@ async def ban_user(message: types.Message, bot: Bot):
         
         user_id = int(command_args[1])
         if user_id <= 0:
-            await message.answer("❌ Укажите положительный Telegram ID реального пользователя.")
+            await message.answer("❌ Укажите положительный Telegram ID реального пользователя")
             return
 
         deleted = await delete_user_profile(user_id)
         added_to_blacklist = await add_to_blacklist(user_id)
         
         if deleted and added_to_blacklist:
-            await message.answer(f"✅ Пользователь {user_id} забанен: профиль удален и добавлен в черный список.")
+            await message.answer(f"✅ Пользователь {user_id} забанен: профиль удален и добавлен в черный список")
             await bot.send_message(
                 user_id,
                 "❗️<b>Вы были заблокированы</b>\n\n"
                 "<i>Если считаете, что произошла ошибка, то обратитесь в поддержку 🧑‍💻 - /support</i>"
             )
         elif added_to_blacklist:
-            await message.answer(f"⚠️ Профиль пользователя {user_id} не найден, но он был добавлен в черный список.")
+            await message.answer(f"⚠️ Профиль пользователя {user_id} не найден, но он был добавлен в черный список")
         else:
-            await message.answer(f"❌ Ошибка при добавлении пользователя {user_id} в черный список.")
+            await message.answer(f"❌ Ошибка при добавлении пользователя {user_id} в черный список")
             
     except ValueError:
-        await message.answer("❌ Неверный формат user_id. Ожидается число.")
+        await message.answer("❌ Неверный формат user_id. Ожидается число")
     except Exception as e:
         await message.answer(f"❌ Ошибка при бане пользователя: {str(e)}")
 
@@ -60,7 +60,7 @@ async def ban_user(message: types.Message, bot: Bot):
 @router.message(Command("get_all_id"))
 async def get_all_id(message: types.Message, bot: Bot):
     if str(message.from_user.id) != ADMIN_ID:
-        await message.answer("❌ У вас нет прав администратора для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав администратора для выполнения этой команды")
         return
     
     try:
@@ -85,7 +85,7 @@ async def get_all_id(message: types.Message, bot: Bot):
 @router.message(Command("get_info_user"))
 async def get_info_user(message: types.Message, bot: Bot):
     if str(message.from_user.id) != ADMIN_ID:
-        await message.answer("❌ У вас нет прав администратора для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав администратора для выполнения этой команды")
         return
     
     try:
@@ -102,10 +102,10 @@ async def get_info_user(message: types.Message, bot: Bot):
         if displayer and displayer.profile:
             await displayer.with_stats().with_data_for_admin().send()
         else:
-            await message.answer(f"❌ Профиль пользователя {user_id} не найден.")
+            await message.answer(f"❌ Профиль пользователя {user_id} не найден")
             
     except ValueError:
-        await message.answer("❌ Неверный формат user_id. Ожидается число.")
+        await message.answer("❌ Неверный формат user_id. Ожидается число")
     except Exception as e:
         await message.answer(f"❌ Ошибка при получении информации о пользователе: {str(e)}")
 
@@ -117,7 +117,7 @@ async def total_info(message: types.Message):
     кол-во людей по каждому полу.
     """
     if str(message.from_user.id) != ADMIN_ID:
-        await message.answer("❌ У вас нет прав администратора для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав администратора для выполнения этой команды")
         return
     
     try:
@@ -142,7 +142,7 @@ async def total_info(message: types.Message):
 @router.message(Command("unban_user"))
 async def unban_user(message: types.Message, bot: Bot):
     if str(message.from_user.id) != ADMIN_ID:
-        await message.answer("❌ У вас нет прав администратора для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав администратора для выполнения этой команды")
         return
     
     try:
@@ -153,22 +153,22 @@ async def unban_user(message: types.Message, bot: Bot):
         
         user_id = int(command_args[1])
         if user_id <= 0:
-            await message.answer("❌ Укажите положительный Telegram ID реального пользователя.")
+            await message.answer("❌ Укажите положительный Telegram ID реального пользователя")
             return
 
         removed_from_blacklist = await remove_from_blacklist(user_id)
         
         if removed_from_blacklist:
-            await message.answer(f"✅ Пользователь {user_id} разбанен: удален из черного списка.")
+            await message.answer(f"✅ Пользователь {user_id} разбанен: удален из черного списка")
             await bot.send_message(
                 user_id,
                 "✅ <b>Вы разблокированы</b>\n\n"
                 "<i>Можете снова заполнить анкету</i>"
             )
         else:
-            await message.answer(f"⚠️ Пользователь {user_id} не найден в черном списке.")
+            await message.answer(f"⚠️ Пользователь {user_id} не найден в черном списке")
             
     except ValueError:
-        await message.answer("❌ Неверный формат user_id. Ожидается число.")
+        await message.answer("❌ Неверный формат user_id. Ожидается число")
     except Exception as e:
         await message.answer(f"❌ Ошибка при разбане пользователя: {str(e)}")
