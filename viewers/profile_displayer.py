@@ -145,7 +145,7 @@ class ProfileDisplayer:
             return (
                 f"{base}\n"
                 f"Внутренний ID: <code>{profile['user_id']}</code>\n"
-                "<i>Для удаления используйте меню тестовых анкет.</i>"
+                "<i>Для удаления используйте меню тестовых анкет</i>"
             )
         return (
             f"{base}\n"
@@ -165,19 +165,19 @@ class ProfileDisplayer:
         return self
 
     def with_like_response(self) -> "ProfileDisplayer":
-        """Добавляет надпись 'Вы выбрали: ❤️' и убирает клавиатуру."""
+        """Добавляет надпись 'Вы выбрали: ❤️' и убирает клавиатуру"""
         self._caption_template = self._with_like_response_caption_template
         self._keyboard_factory = lambda _: InlineKeyboardMarkup(inline_keyboard=[])
         return self
 
     def with_like_message_response(self) -> "ProfileDisplayer":
-        """Добавляет надпись 'Вы выбрали: 💬' и убирает клавиатуру."""
+        """Добавляет надпись 'Вы выбрали: 💬' и убирает клавиатуру"""
         self._caption_template = self._with_like_message_response_caption_template
         self._keyboard_factory = lambda _: InlineKeyboardMarkup(inline_keyboard=[])
         return self
 
     def with_dislike_response(self) -> "ProfileDisplayer":
-        """Добавляет надпись 'Вы выбрали: 👎' и убирает клавиатуру."""
+        """Добавляет надпись 'Вы выбрали: 👎' и убирает клавиатуру"""
         self._caption_template = self._with_dislike_response_caption_template
         self._keyboard_factory = lambda _: InlineKeyboardMarkup(inline_keyboard=[])
         return self
@@ -235,14 +235,14 @@ class ProfileDisplayer:
                 pass
 
     async def _delete_message_safe(self, obj: Union[Message, CallbackQuery]) -> None:
-        """Безопасно удаляет сообщение, игнорируя ошибки."""
+        """Безопасно удаляет сообщение, игнорируя ошибки"""
         message = obj.message if isinstance(obj, CallbackQuery) else obj
         if not message:
             return
         await self.delete_profile_media(message.chat.id, message.message_id)
 
     async def _remove_buttons_safe(self, obj: Union[Message, CallbackQuery]) -> None:
-        """Безопасно убирает inline-кнопки с сообщения."""
+        """Безопасно убирает inline-кнопки с сообщения"""
         message = obj.message if isinstance(obj, CallbackQuery) else obj
         if message:
             try:
@@ -303,12 +303,24 @@ class ProfileDisplayer:
                 )
             except TelegramBadRequest as e:
                 # Telegram reports this when the requested keyboard is already attached.
-                if "message is not modified" in str(e).lower():
-                    logger.debug("Profile actions are already attached to media message %s.", first.message_id)
+                error_text = str(getattr(e, "message", e)).lower()
+                if "message is not modified" in error_text or "message not modified" in error_text:
+                    logger.debug(
+                        "Profile actions are already attached to media message %s",
+                        first.message_id,
+                    )
                 else:
-                    logger.exception("Could not attach profile actions to the media album.")
-            except Exception:
-                logger.exception("Could not attach profile actions to the media album.")
+                    logger.warning(
+                        "Could not attach profile actions to media message %s: %s",
+                        first.message_id,
+                        error_text,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Could not attach profile actions to media message %s: %s",
+                    first.message_id,
+                    e,
+                )
             ids = [message.message_id for message in messages]
             _PROFILE_MEDIA_GROUPS[(chat_id, first.message_id)] = ids
             return
