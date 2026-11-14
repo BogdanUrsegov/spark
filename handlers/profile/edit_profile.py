@@ -5,10 +5,12 @@ from config import ADMIN_ID
 from keyboards import cancel_edit, get_location_keyboard, get_gender_edit_keyboard, get_edit_profile_keyboard
 from services import *
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import (
+    CallbackQuery, Message, ReplyKeyboardRemove,
+)
 from aiogram.fsm.context import FSMContext
 from states import EditProfile
-from storage import update_user_field
+from storage import update_user_field, get_user_profile, set_user_profile_media
 from utils import contains_forbidden_content, get_city_by_coords
 from viewers import *
 
@@ -35,6 +37,7 @@ async def cancel_edit_geo(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("cancel_edit"))
 async def process_cancel_edit(callback: CallbackQuery, state: FSMContext, bot):
     user_id = callback.from_user.id
+    await state.clear()
     try:
         await callback.message.delete()
     except TelegramBadRequest as e:
@@ -78,7 +81,7 @@ async def handle_edit_name(message: Message, state: FSMContext, bot: Bot):
         await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update name for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить имя. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить имя. Попробуйте позже</b>")
 
 
 # --- Редактирование возраста ---
@@ -111,7 +114,7 @@ async def handle_edit_age(message: Message, state: FSMContext, bot: Bot):
         await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update age for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить возраст. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить возраст. Попробуйте позже</b>")
 
 
 # --- Редактирование описания ---
@@ -144,41 +147,60 @@ async def handle_edit_description(message: Message, state: FSMContext, bot: Bot)
         await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update description for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить описание. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить описание. Попробуйте позже</b>")
 
 
-# --- Редактирование фото ---
-@router.message(EditProfile.photo, F.photo)
-async def handle_edit_photo(message: Message, state: FSMContext, bot: Bot):
+# --- Замена одного фото или видео в анкете ---
+@router.message(EditProfile.photo, F.photo | F.video)
+async def handle_edit_profile_media(message: Message, state: FSMContext, bot: Bot):
     user_id = message.from_user.id
-    photo_id = message.photo[-1].file_id
-    logger.info(f"Processing photo update for user {user_id}")
-    
-    success = await update_user_field(user_id, "photo_id", photo_id)
-    data = await state.get_data()
-    await bot.edit_message_reply_markup(chat_id=user_id, message_id=data["message"], reply_markup=None)
-    await state.clear()
-    if success:
-        logger.info(f"Photo updated successfully for user {user_id}")
-        await message.answer("✅ <b>Фото успешно обновлено!</b>")
-        displayer = await ProfileDisplayer.create(bot, user_id, user_id)
-        logger.debug(f"Profile found for user {user_id}, displaying")
-        await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
-        displayer = await ProfileDisplayer.create(bot, ADMIN_ID, user_id)
-        if displayer and displayer.profile:
-            await displayer.with_data_for_admin().send_over()
+    if message.photo:
+        item = {"type": "photo", "file_id": message.photo[-1].file_id}
     else:
-        logger.error(f"Failed to update photo for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить фото. Попробуйте позже.</b>")
+        video = message.video
+        if video.duration > 30:
+            await message.answer("❌ Видео должно длиться не больше 30 секунд")
+            return
+        item = {"type": "video", "file_id": video.file_id}
+
+    try:
+        success = await set_user_profile_media(user_id, [item])
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
+        return
+
+    if not success:
+        await message.answer("⚠️ Не удалось сохранить медиа. Попробуйте ещё раз")
+        return
+
+    data = await state.get_data()
+    await state.clear()
+    displayer = await ProfileDisplayer.create(bot, user_id, user_id)
+    profile_message_id = data.get("profile_message")
+    if profile_message_id:
+        await displayer.delete_profile_media(user_id, profile_message_id)
+
+    prompt_id = data.get("message")
+    if prompt_id:
+        try:
+            await bot.delete_message(chat_id=user_id, message_id=prompt_id)
+        except Exception:
+            pass
+
+    await message.answer("✅ Медиа анкеты обновлено")
+    if displayer and displayer.profile:
+        await displayer.with_stats().with_profile_keyboard().send()
+    else:
+        await message.answer("⚠️ Не удалось показать обновлённую анкету")
+
+    admin_displayer = await ProfileDisplayer.create(bot, ADMIN_ID, user_id)
+    if admin_displayer and admin_displayer.profile:
+        await admin_displayer.with_data_for_admin().send_over()
 
 
-# --- Ошибка: прислали не фото ---
 @router.message(EditProfile.photo)
-async def handle_edit_photo_invalid(message: Message):
-    user_id = message.from_user.id
-    logger.warning(f"User {user_id} sent invalid photo (not an image)")
-    await message.answer("❌ <b>Пожалуйста, отправьте именно фото (не файл и не текст).</b>")
-
+async def handle_edit_profile_media_invalid(message: Message):
+    await message.answer("❌ Отправьте одно фото или видео длительностью до 30 секунд")
 
 @router.callback_query(F.data == "edit_profile")
 async def edit_profile(callback: CallbackQuery):
@@ -261,17 +283,28 @@ async def edit_description(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "edit_photo")
 async def edit_photo(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    logger.info(f"User {user_id} started editing photo")
-    
-    await callback.answer()
-    await state.set_state(EditProfile.photo)
-    await state.update_data(message=callback.message.message_id)
-    await callback.message.edit_text(
-        "🖼️ <b>Редактирование фото</b>\n\n"
-        "Отправьте новое фото:",
-        reply_markup=cancel_edit()
-    )
+    profile = await get_user_profile(user_id)
+    if not profile:
+        await callback.answer("Анкета не найдена", show_alert=True)
+        return
 
+    await callback.answer()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    prompt = await callback.message.answer(
+        "📸 <b>Отправьте одно фото или видео до 30 секунд.</b>\n\n"
+        "Новое медиа заменит прежнее",
+        reply_markup=cancel_edit(),
+    )
+    await state.set_state(EditProfile.photo)
+    # Editing media starts a fresh set: save will replace the previous media list.
+    await state.update_data(
+        message=prompt.message_id,
+        profile_message=callback.message.message_id,
+    )
 
 @router.callback_query(EditProfile.gender, F.data.startswith("gender:"))
 async def process_edit_gender(callback: CallbackQuery, state: FSMContext, bot):
@@ -287,7 +320,7 @@ async def process_edit_gender(callback: CallbackQuery, state: FSMContext, bot):
         await callback.message.answer("✅ <b>Пол успешно обновлён!</b>")
     else:
         logger.error(f"Failed to update gender for user {user_id}")
-        await callback.message.answer("⚠️ <b>Не удалось сохранить пол. Попробуйте позже.</b>")
+        await callback.message.answer("⚠️ <b>Не удалось сохранить пол. Попробуйте позже</b>")
     await handle_show_my_profile_request(bot, callback)
 
 # --- Редактирование геопозиции (кнопка) ---
@@ -308,7 +341,7 @@ async def edit_geo(callback: CallbackQuery, state: FSMContext):
     # Отправляем НОВОЕ сообщение с reply-клавиатурой (не редактируем!)
     await callback.message.answer(
         "📍 <b>Редактирование геопозиции</b>\n\n"
-        "Нажми кнопку ниже, чтобы поделиться новым местоположением.",
+        "Нажми кнопку ниже, чтобы поделиться новым местоположением",
         reply_markup=get_location_keyboard()
     )
 
@@ -322,7 +355,7 @@ async def handle_edit_geo(message: Message, state: FSMContext, bot: Bot):
     logger.info(f"Processing geo update for user {user_id}: {lat}, {lon}")
     
     # Убираем клавиатуру с кнопкой геопозиции
-    await message.answer("🔄 Обновляю данные...", reply_markup=ReplyKeyboardRemove())
+    await message.answer("🔄 Обновляю данные", reply_markup=ReplyKeyboardRemove())
     
     # Определяем город (если есть функция)
     city = None
@@ -350,7 +383,7 @@ async def handle_edit_geo(message: Message, state: FSMContext, bot: Bot):
             await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update geo for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить геопозицию. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить геопозицию. Попробуйте позже</b>")
 
 # --- Ошибка: прислали не геопозицию ---
 @router.message(EditProfile.location)
@@ -358,6 +391,6 @@ async def handle_edit_geo_invalid(message: Message):
     user_id = message.from_user.id
     logger.warning(f"User {user_id} sent invalid data instead of location")
     await message.answer(
-        "❌ <b>Пожалуйста, нажми на кнопку 📍 Поделиться геопозицией</b> на клавиатуре ниже.",
+        "❌ <b>Пожалуйста, нажми на кнопку 📍 Поделиться геопозицией</b> на клавиатуре ниже",
         reply_markup=get_location_keyboard()
     )

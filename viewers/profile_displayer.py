@@ -1,5 +1,7 @@
 import logging
+import json
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 import html
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from typing import Callable, Optional, Union, Dict, Any
@@ -15,6 +17,7 @@ from keyboards import (
 from storage.database import update_user_field
 
 logger = logging.getLogger(__name__)
+
 
 
 class ProfileDisplayer:
@@ -79,7 +82,7 @@ class ProfileDisplayer:
     def _format_location(city) -> str:
         """Форматирует строку с городом (если есть)"""
         if city and city.strip():
-            return f"📍 {city}"
+            return f"📍 {html.escape(city)}"
         return ""
 
     @staticmethod
@@ -89,12 +92,11 @@ class ProfileDisplayer:
         desc = html.escape(html.unescape(profile["description"]))
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         location = ProfileDisplayer._format_location(profile.get("city"))
-        
+        description_block = f"\n\n<b>О себе:</b>\n{desc}" if desc.strip() else ""
         return (
             f"{gender_emoji} <b>{name}, {profile['age']}</b>\n"
-            f"{location}\n\n"
-            f"<b>О себе:</b>\n"
-            f"{desc}\n"
+            f"{location}"
+            f"{description_block}\n"
         )
 
     @staticmethod
@@ -130,17 +132,23 @@ class ProfileDisplayer:
         name = html.escape(profile["name"])
         gender_emoji = ProfileDisplayer._get_gender_emoji(profile["gender"])
         city = profile.get("city")
-        city_str = f" | 📍 {city}" if city else ""
+        city_str = f" | 📍 {html.escape(city)}" if city else ""
         return f"{gender_emoji} <b>{name}</b>, {profile['age']}{city_str}"
 
     @staticmethod
     def _with_data_for_admin_template(profile: Dict[str, Any]) -> str:
         """Анкета с отображением данных для админа"""
         base = ProfileDisplayer._default_caption_template(profile)
+        if profile.get("is_fake"):
+            return (
+                f"{base}\n"
+                f"Внутренний ID: <code>{profile['user_id']}</code>\n"
+                "<i>Для удаления используйте меню тестовых анкет</i>"
+            )
         return (
             f"{base}\n"
             f"User ID: <code>{profile['user_id']}</code>\n"
-            f"Username: @{profile['username'] if profile['username'] else ''}\n\n"
+            f"Username: @{html.escape(profile['username']) if profile['username'] else ''}\n\n"
             f"Для быстрого бана: <code>/{admins_commands['ban_user']} {profile['user_id']}</code>"
         )
     
@@ -155,19 +163,19 @@ class ProfileDisplayer:
         return self
 
     def with_like_response(self) -> "ProfileDisplayer":
-        """Добавляет надпись 'Вы выбрали: ❤️' и убирает клавиатуру."""
+        """Добавляет надпись 'Вы выбрали: ❤️' и убирает клавиатуру"""
         self._caption_template = self._with_like_response_caption_template
         self._keyboard_factory = lambda _: InlineKeyboardMarkup(inline_keyboard=[])
         return self
 
     def with_like_message_response(self) -> "ProfileDisplayer":
-        """Добавляет надпись 'Вы выбрали: 💬' и убирает клавиатуру."""
+        """Добавляет надпись 'Вы выбрали: 💬' и убирает клавиатуру"""
         self._caption_template = self._with_like_message_response_caption_template
         self._keyboard_factory = lambda _: InlineKeyboardMarkup(inline_keyboard=[])
         return self
 
     def with_dislike_response(self) -> "ProfileDisplayer":
-        """Добавляет надпись 'Вы выбрали: 👎' и убирает клавиатуру."""
+        """Добавляет надпись 'Вы выбрали: 👎' и убирает клавиатуру"""
         self._caption_template = self._with_dislike_response_caption_template
         self._keyboard_factory = lambda _: InlineKeyboardMarkup(inline_keyboard=[])
         return self
@@ -178,7 +186,7 @@ class ProfileDisplayer:
         return self
     
     def with_data_for_admin(self):
-        if self.user_id == ADMIN_ID:
+        if str(self.user_id) == str(ADMIN_ID):
             self._caption_template = self._with_data_for_admin_template
         return self
 
@@ -214,21 +222,22 @@ class ProfileDisplayer:
     # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ СООБЩЕНИЯМИ
     # --------------------
 
+    async def delete_profile_media(self, chat_id: int, message_id: int) -> None:
+        """Delete one profile media message."""
+        try:
+            await self.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception:
+            pass
+
     async def _delete_message_safe(self, obj: Union[Message, CallbackQuery]) -> None:
-        """Безопасно удаляет сообщение, игнорируя ошибки."""
-        if isinstance(obj, CallbackQuery) and obj.message:
-            try:
-                await obj.message.delete()
-            except Exception:
-                pass
-        elif isinstance(obj, Message):
-            try:
-                await obj.delete()
-            except Exception:
-                pass
+        """Безопасно удаляет сообщение, игнорируя ошибки"""
+        message = obj.message if isinstance(obj, CallbackQuery) else obj
+        if not message:
+            return
+        await self.delete_profile_media(message.chat.id, message.message_id)
 
     async def _remove_buttons_safe(self, obj: Union[Message, CallbackQuery]) -> None:
-        """Безопасно убирает inline-кнопки с сообщения."""
+        """Безопасно убирает inline-кнопки с сообщения"""
         message = obj.message if isinstance(obj, CallbackQuery) else obj
         if message:
             try:
@@ -239,6 +248,51 @@ class ProfileDisplayer:
     # --------------------
     # ОСНОВНЫЕ МЕТОДЫ ОТПРАВКИ
     # --------------------
+
+    def _profile_media_item(self) -> dict[str, str]:
+        """Return one media item, falling back to the legacy photo_id column."""
+        raw_media = self.profile.get("media_json") if self.profile else None
+        if raw_media:
+            try:
+                media = json.loads(raw_media)
+                if isinstance(media, list):
+                    # Older profiles may still contain several files; display only the first.
+                    for item in media:
+                        if (
+                            isinstance(item, dict)
+                            and item.get("type") in {"photo", "video"}
+                            and isinstance(item.get("file_id"), str)
+                            and item["file_id"].strip()
+                        ):
+                            return {"type": item["type"], "file_id": item["file_id"]}
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Ignoring invalid media_json for profile %s", self.profile.get("user_id"))
+        return {"type": "photo", "file_id": self.profile["photo_id"]}
+
+    async def _send_profile_media(
+        self,
+        caption: str,
+        keyboard: InlineKeyboardMarkup,
+        reply_to_message_id: int | None = None,
+    ) -> None:
+        item = self._profile_media_item()
+        chat_id = self.user_id
+        if item["type"] == "video":
+            await self.bot.send_video(
+                chat_id=chat_id,
+                video=item["file_id"],
+                caption=caption,
+                reply_markup=keyboard,
+                reply_to_message_id=reply_to_message_id,
+            )
+        else:
+            await self.bot.send_photo(
+                chat_id=chat_id,
+                photo=item["file_id"],
+                caption=caption,
+                reply_markup=keyboard,
+                reply_to_message_id=reply_to_message_id,
+            )
 
     async def send(self) -> bool:
         """
@@ -253,12 +307,7 @@ class ProfileDisplayer:
         caption = self._caption_template(self.profile)
         keyboard = self._keyboard_factory(self.profile)
 
-        await self.bot.send_photo(
-            chat_id=self.user_id,
-            photo=self.profile["photo_id"],
-            caption=caption,
-            reply_markup=keyboard,
-        )
+        await self._send_profile_media(caption, keyboard)
         logger.info(f"Profile sent to user {self.user_id}")
         return True
 
@@ -302,13 +351,7 @@ class ProfileDisplayer:
         caption = self._caption_template(self.profile)
         keyboard = self._keyboard_factory(self.profile)
 
-        await self.bot.send_photo(
-            chat_id=self.user_id,
-            photo=self.profile["photo_id"],
-            caption=caption,
-            reply_markup=keyboard,
-            reply_to_message_id=reply_to_message_id
-        )
+        await self._send_profile_media(caption, keyboard, reply_to_message_id=reply_to_message_id)
         logger.info(f"Profile sent over to user {self.user_id}")
         return True
 
@@ -332,8 +375,8 @@ class ProfileDisplayer:
 
         # Определяем целевое сообщение
         target_message = message.message if isinstance(message, CallbackQuery) else message
-        if not target_message or not target_message.photo:
-            logger.warning(f"Cannot edit message: it's not a photo message or missing")
+        if not target_message or not (target_message.photo or target_message.video or target_message.text):
+            logger.warning("Cannot edit message: it is not a photo/video message or is missing")
             return False
 
         # Формируем обновления
@@ -341,13 +384,22 @@ class ProfileDisplayer:
         keyboard = self._keyboard_factory(self.profile) if update_keyboard else target_message.reply_markup
 
         try:
-            await self.bot.edit_message_caption(
-                chat_id=target_message.chat.id,
-                message_id=target_message.message_id,
-                caption=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+            if target_message.text is not None:
+                await self.bot.edit_message_text(
+                    chat_id=target_message.chat.id,
+                    message_id=target_message.message_id,
+                    text=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
+            else:
+                await self.bot.edit_message_caption(
+                    chat_id=target_message.chat.id,
+                    message_id=target_message.message_id,
+                    caption=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
             logger.info(f"Profile edited for user {self.user_id} (message {target_message.message_id})")
             return True
         except Exception as e:

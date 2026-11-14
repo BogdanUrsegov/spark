@@ -25,6 +25,10 @@ async def process_action(
     try:
         is_mutual = await save_action(liker_id, liked_id, action, safe_message)
 
+        # Demo profiles are records, not Telegram accounts: never try to DM them.
+        if liked_id < 0:
+            return False
+
         if action in ("like", "like_with_message"):
             if is_mutual:
                 await _notify_mutual_like(bot, liker_id, liked_id, safe_message)

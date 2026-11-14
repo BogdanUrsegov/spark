@@ -123,7 +123,7 @@ def get_edit_profile_keyboard():
             InlineKeyboardButton(text="✍️ О себе", callback_data=EDIT_DESCRIPTION_CALL)
         ],
         [
-            InlineKeyboardButton(text="📸 Фото", callback_data=EDIT_PHOTO_CALL),
+            InlineKeyboardButton(text="📸 Фото/видео", callback_data=EDIT_PHOTO_CALL),
         ],
         [
             InlineKeyboardButton(text="📍 Местоположение", callback_data=EDIT_GEO_CALL),

@@ -53,7 +53,7 @@ async def show_my_profile(callback: CallbackQuery, bot):
 async def handle_view_profiles(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
     logger.info(f"User {user_id} requested to view profiles")
-    await callback.answer("Загрузка анкеты...")
+    await callback.answer("Загрузка анкеты")
     # await handle_view_profiles_request(bot, callback)
     await update_user_field(user_id, "is_active", 1)
     next_profile = await get_next_profile_for_user(user_id)
@@ -113,7 +113,7 @@ async def handle_like(callback: CallbackQuery, bot: Bot):
 async def handle_like_msg(callback: CallbackQuery, bot: Bot, state: FSMContext):
     user_id = callback.from_user.id
     target_id = int(callback.data.split(":")[1])
-    logger.info(f"User {user_id} wants to send a message to {target_id}")
+    logger.info("User %s opened the private-message flow.", user_id)
     
     await callback.answer("Вы выбрали: 💬")
 
@@ -205,7 +205,7 @@ async def handle_find_out_who(callback: CallbackQuery, bot: Bot):
         )
     else:
         logger.warning(f"Liker profile {liker_id} not available for user {user_id}")
-        await callback.message.answer("<b>Анкета недоступна.</b>")
+        await callback.message.answer("<b>Анкета недоступна</b>")
 
 @router.callback_query(F.data.startswith("open_chat"))
 async def handle_open_chat(callback: CallbackQuery, bot: Bot):
@@ -230,7 +230,7 @@ async def handle_open_chat(callback: CallbackQuery, bot: Bot):
         )
     else:
         logger.warning(f"Mutual like profile {liker_id} not available for user {user_id}")
-        await callback.message.answer("<b>Анкета недоступна.</b>")
+        await callback.message.answer("<b>Анкета недоступна</b>")
 
     await callback.message.answer("👀 <b>Готов продолжить смотреть анкеты?</b>", reply_markup=get_main_menu_keyboard())
 
@@ -255,7 +255,7 @@ async def handle_update_username(callback: CallbackQuery, bot: Bot):
     else:
         await callback.answer(
             "⚠️ Юзернейм не найден\n"
-            "Пользователь не указал юзернейм в Telegram.\n"
+            "Пользователь не указал юзернейм в Telegram\n"
             "🔄 Попробуйте позже — данные могут обновиться!",
             show_alert=True
         )
