@@ -54,7 +54,7 @@ def get_broadcast_confirm_kb():
 @router.message(F.text == "/admin_menu")
 async def cmd_admin_menu(message: types.Message):
     if not is_admin(message.from_user.id):
-        await message.answer("❌ Доступ запрещён.")
+        await message.answer("❌ Доступ запрещён")
         return
     await message.answer("🛠 <b>Админ-панель</b>", reply_markup=get_admin_menu_kb())
 
@@ -130,7 +130,7 @@ async def delete_profile_start(callback: types.CallbackQuery, state: FSMContext)
 @router.callback_query(F.data == "admin_back")
 async def admin_back_callback(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
-        await callback.answer("❌ Доступ запрещён.", show_alert=True)
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
         return
     await state.clear()
     await callback.message.edit_text(
@@ -160,15 +160,15 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
 
     if not message.text or not message.text.strip().isdigit():
         await message.answer(
-            "❌ Неверный формат. Отправьте <b>число</b> (user_id).\n"
-            "Или нажмите «❌ Отмена» выше.",
+            "❌ Неверный формат. Отправьте <b>число</b> (user_id)\n"
+            "Или нажмите «❌ Отмена» выше",
             reply_markup=get_cancel_kb()
         )
         return
 
     user_id = int(message.text.strip())
     if user_id <= 0:
-        await message.answer("❌ Укажите положительный Telegram user_id реального пользователя.", reply_markup=get_cancel_kb())
+        await message.answer("❌ Укажите положительный Telegram user_id реального пользователя", reply_markup=get_cancel_kb())
         return
     data = await state.get_data()
     action = data.get("action")
@@ -180,14 +180,14 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
         if displayer and displayer.profile:
             await displayer.with_stats().with_data_for_admin().send()
         else:
-            await message.answer(f"❌ Профиль пользователя {user_id} не найден.")
+            await message.answer(f"❌ Профиль пользователя {user_id} не найден")
         await message.answer("🛠 Админ-панель", reply_markup=get_admin_menu_kb())
 
     elif action == "delete_profile":
         deleted = await delete_user_profile(user_id)
         text = (
-            f"✅ Анкета пользователя {user_id} удалена."
-            if deleted else f"⚠️ Анкета пользователя {user_id} не найдена."
+            f"✅ Анкета пользователя {user_id} удалена"
+            if deleted else f"⚠️ Анкета пользователя {user_id} не найдена"
         )
         await message.answer(text, reply_markup=get_admin_menu_kb())
 
@@ -196,7 +196,7 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
         added = await add_to_blacklist(user_id)
 
         if deleted and added:
-            await message.answer(f"✅ Пользователь {user_id} забанен.")
+            await message.answer(f"✅ Пользователь {user_id} забанен")
             try:
                 await bot.send_message(
                     user_id,
@@ -206,21 +206,21 @@ async def process_user_id_input(message: types.Message, state: FSMContext, bot: 
             except:
                 pass
         elif added:
-            await message.answer(f"⚠️ Профиль не найден, но {user_id} добавлен в ЧС.")
+            await message.answer(f"⚠️ Профиль не найден, но {user_id} добавлен в ЧС")
         else:
-            await message.answer(f"❌ Не удалось забанить {user_id}.")
+            await message.answer(f"❌ Не удалось забанить {user_id}")
         await message.answer("🛠 Админ-панель", reply_markup=get_admin_menu_kb())
 
     elif action == "unban":
         removed = await remove_from_blacklist(user_id)
         if removed:
-            await message.answer(f"✅ Пользователь {user_id} разбанен.")
+            await message.answer(f"✅ Пользователь {user_id} разбанен")
             try:
                 await bot.send_message(user_id, "✅ <b>Вы разблокированы</b>\n\n<i>Можете снова заполнить анкету</i>")
             except:
                 pass
         else:
-            await message.answer(f"⚠️ Пользователь {user_id} не в чёрном списке.")
+            await message.answer(f"⚠️ Пользователь {user_id} не в чёрном списке")
         await message.answer("🛠 Админ-панель", reply_markup=get_admin_menu_kb())
 
 
@@ -268,7 +268,7 @@ async def process_broadcast_text(message: types.Message, state: FSMContext):
         return
 
     if not message.text:
-        await message.answer("❌ Отправьте текстовое сообщение.", reply_markup=get_cancel_kb())
+        await message.answer("❌ Отправьте текстовое сообщение", reply_markup=get_cancel_kb())
         return
 
     await state.update_data(broadcast_text=message.html_text)
@@ -293,7 +293,7 @@ async def confirm_broadcast(callback: types.CallbackQuery, state: FSMContext, bo
     data = await state.get_data()
     text = data.get("broadcast_text")
     if not text:
-        await callback.message.answer("❌ Текст рассылки утерян. Начните заново.", reply_markup=get_admin_menu_kb())
+        await callback.message.answer("❌ Текст рассылки утерян. Начните заново", reply_markup=get_admin_menu_kb())
         await state.clear()
         return
 
@@ -301,10 +301,10 @@ async def confirm_broadcast(callback: types.CallbackQuery, state: FSMContext, bo
     user_ids = await get_all_user_ids()
 
     if not user_ids:
-        await callback.message.answer("📭 Нет активных пользователей для рассылки.", reply_markup=get_admin_menu_kb())
+        await callback.message.answer("📭 Нет активных пользователей для рассылки", reply_markup=get_admin_menu_kb())
         return
 
-    await callback.message.edit_text("⏳ Рассылка запущена... Это может занять время.")
+    await callback.message.edit_text("⏳ Рассылка запущена... Это может занять время")
 
     from utils.broadcast import broadcast
 
