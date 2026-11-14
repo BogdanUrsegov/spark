@@ -95,13 +95,13 @@ async def _show_fake_profiles(message: Message, *, edit: bool = False, page: int
         text = (
             "🎭 <b>Тестовые анкеты</b>\n\n"
             f"Создано: <b>{len(profiles)}</b>\n"
-            "Такие анкеты помогают заполнять результаты обычного поиска."
+            "Такие анкеты помогают заполнять результаты обычного поиска"
         )
     else:
         text = (
             "🎭 <b>Тестовые анкеты</b>\n\n"
-            "Пока нет ни одной тестовой анкеты.\n"
-            "Нажмите «Создать», чтобы вручную заполнить профиль."
+            "Пока нет ни одной тестовой анкеты\n"
+            "Нажмите «Создать», чтобы вручную заполнить профиль"
         )
 
     if total_pages > 1:
@@ -147,8 +147,8 @@ async def fake_profile_create_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.fake_profile_name)
     await callback.message.edit_text(
         "➕ <b>Создание тестовой анкеты — шаг 1/6</b>\n\n"
-        "Введите имя (2–30 символов).\n"
-        "Профиль будет участвовать в обычном поиске наравне с реальными анкетами.",
+        "Введите имя (2–30 символов)\n"
+        "Профиль будет участвовать в обычном поиске наравне с реальными анкетами",
         reply_markup=_cancel_keyboard(),
     )
     await callback.answer()
@@ -165,11 +165,11 @@ async def fake_profile_name(message: Message, state: FSMContext):
         or not re.fullmatch(r"[а-яА-ЯёЁa-zA-Z ]+", name)
         or contains_forbidden_content(name)
     ):
-        await message.answer("❌ Имя должно быть длиной 2–30 символов, без ссылок и @. Попробуйте ещё раз.")
+        await message.answer("❌ Имя должно быть длиной 2–30 символов, без ссылок и @. Попробуйте ещё раз")
         return
     await state.update_data(fake_name=name)
     await state.set_state(AdminStates.fake_profile_age)
-    await message.answer("🔢 <b>Шаг 2/6.</b> Введите возраст (16–30).", reply_markup=_cancel_keyboard())
+    await message.answer("🔢 <b>Шаг 2/6.</b> Введите возраст (16–30)", reply_markup=_cancel_keyboard())
 
 
 @router.message(AdminStates.fake_profile_age)
@@ -179,7 +179,7 @@ async def fake_profile_age(message: Message, state: FSMContext):
         return
     raw_age = (message.text or "").strip()
     if not raw_age.isdigit() or not 16 <= int(raw_age) <= 30:
-        await message.answer("❌ Возраст должен быть целым числом от 16 до 30. Попробуйте ещё раз.")
+        await message.answer("❌ Возраст должен быть целым числом от 16 до 30. Попробуйте ещё раз")
         return
     await state.update_data(fake_age=int(raw_age))
     await state.set_state(AdminStates.fake_profile_gender)
@@ -199,7 +199,7 @@ async def fake_profile_gender(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.fake_profile_description)
     await callback.message.edit_text(
         f"Выбрано: <b>{gender}</b>\n\n"
-        "💬 <b>Шаг 4/6.</b> Введите описание анкеты (до 500 символов) или пропустите этот шаг.",
+        "💬 <b>Шаг 4/6.</b> Введите описание анкеты (до 500 символов) или пропустите этот шаг",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⏭ Пропустить описание", callback_data="admin_fake_skip_description")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel")],
@@ -217,11 +217,11 @@ async def fake_profile_skip_description(callback: CallbackQuery, state: FSMConte
     await state.set_state(AdminStates.fake_profile_location)
     await callback.message.edit_text(
         "Описание пропущено.\n\n"
-        "📍 <b>Шаг 5/6.</b> Поделитесь геопозицией кнопкой ниже. Город определится автоматически.",
+        "📍 <b>Шаг 5/6.</b> Поделитесь геопозицией кнопкой ниже. Город определится автоматически",
         reply_markup=None,
     )
     await callback.message.answer(
-        "Нажмите «📍 Поделиться геопозицией».",
+        "Нажмите «📍 Поделиться геопозицией»",
         reply_markup=get_location_keyboard(False),
     )
     await callback.answer()
@@ -234,13 +234,13 @@ async def fake_profile_description(message: Message, state: FSMContext):
         return
     description = (message.text or "").strip()
     if len(description) > 500 or (description and contains_forbidden_content(description)):
-        await message.answer("❌ Описание должно содержать до 500 символов, без ссылок и @. Попробуйте ещё раз.")
+        await message.answer("❌ Описание должно содержать до 500 символов, без ссылок и @. Попробуйте ещё раз")
         return
     await state.update_data(fake_description=description)
     await state.set_state(AdminStates.fake_profile_location)
     await message.answer(
-        "📍 <b>Шаг 5/6.</b> Поделитесь геопозицией кнопкой ниже — как при обычном заполнении анкеты.\n"
-        "Город определится автоматически по координатам.",
+        "📍 <b>Шаг 5/6.</b> Поделитесь геопозицией кнопкой ниже — как при обычном заполнении анкеты\n"
+        "Город определится автоматически по координатам",
         reply_markup=get_location_keyboard(False),
     )
 
@@ -265,16 +265,16 @@ async def fake_profile_location(message: Message, state: FSMContext):
         "✅ <b>Геопозиция получена.</b>\n\n"
         f"{city_text}"
         "📸 <b>Шаг 6/6.</b> Отправляйте до 3 фото или видео длительностью до 30 секунд. "
-        "Когда закончите, нажмите «Готово». Нужно добавить хотя бы один медиафайл.",
+        "Когда закончите, нажмите «Готово». Нужно добавить хотя бы один медиафайл",
     )
     await state.update_data(fake_media=[])
     await state.set_state(AdminStates.fake_profile_media)
     await message.answer(
-        "Можно отправлять фото и видео по одному. Документы не поддерживаются.",
+        "Можно отправлять фото и видео по одному. Документы не поддерживаются",
         reply_markup=ReplyKeyboardRemove(),
     )
     await message.answer(
-        "Добавьте медиафайлы, затем нажмите «Готово».",
+        "Добавьте медиафайлы, затем нажмите «Готово»",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Готово", callback_data="admin_fake_media_done")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel")],
@@ -289,11 +289,11 @@ async def fake_profile_location_invalid(message: Message, state: FSMContext):
         return
     if message.text and message.text.strip() == "❌ Отмена":
         await state.clear()
-        await message.answer("Создание тестовой анкеты отменено.", reply_markup=ReplyKeyboardRemove())
+        await message.answer("Создание тестовой анкеты отменено", reply_markup=ReplyKeyboardRemove())
         await message.answer("🎭 <b>Управление тестовыми анкетами</b>", reply_markup=_fake_profiles_keyboard(await get_fake_profiles()))
         return
     await message.answer(
-        "❌ Нажмите кнопку «📍 Поделиться геопозицией» и отправьте своё местоположение.",
+        "❌ Нажмите кнопку «📍 Поделиться геопозицией» и отправьте своё местоположение",
         reply_markup=get_location_keyboard(False),
     )
 
@@ -307,7 +307,7 @@ async def fake_profile_add_photo(message: Message, state: FSMContext):
 async def fake_profile_add_video(message: Message, state: FSMContext):
     video = message.video
     if video.duration > 30:
-        await message.answer("❌ Видео должно длиться не более 30 секунд.")
+        await message.answer("❌ Видео должно длиться не более 30 секунд")
         return
     await _add_fake_media(message, state, "video", video.file_id)
 
@@ -319,18 +319,18 @@ async def _add_fake_media(message: Message, state: FSMContext, media_type: str, 
     data = await state.get_data()
     media = data.get("fake_media", [])
     if len(media) >= 3:
-        await message.answer("Достигнут лимит: максимум 3 фото/видео. Нажмите «Готово».")
+        await message.answer("Достигнут лимит: максимум 3 фото/видео. Нажмите «Готово»")
         return
     media.append({"type": media_type, "file_id": file_id})
     await state.update_data(fake_media=media)
-    await message.answer(f"✅ Добавлено: {len(media)}/3. Можно отправить ещё или нажать «Готово».")
+    await message.answer(f"✅ Добавлено: {len(media)}/3. Можно отправить ещё или нажать «Готово»")
 
 
 @router.message(AdminStates.fake_profile_media)
 async def fake_profile_media_invalid(message: Message):
     if not _is_admin(message.from_user.id):
         return
-    await message.answer("❌ Отправьте фото или видео длительностью до 30 секунд. Документы и другие типы файлов не поддерживаются.")
+    await message.answer("❌ Отправьте фото или видео длительностью до 30 секунд. Документы и другие типы файлов не поддерживаются")
 
 
 @router.callback_query(AdminStates.fake_profile_media, F.data == "admin_fake_media_done")
@@ -341,7 +341,7 @@ async def fake_profile_media_done(callback: CallbackQuery, state: FSMContext, bo
     data = await state.get_data()
     media = data.get("fake_media", [])
     if not media:
-        await callback.answer("Сначала добавьте хотя бы одно фото или видео.", show_alert=True)
+        await callback.answer("Сначала добавьте хотя бы одно фото или видео", show_alert=True)
         return
     try:
         fake_id = await create_fake_profile(
@@ -363,7 +363,7 @@ async def fake_profile_media_done(callback: CallbackQuery, state: FSMContext, bo
         return
     except Exception:
         logger.exception("Could not save an admin demo profile.")
-        await callback.message.answer("❌ Ошибка сохранения. Проверьте логи и попробуйте снова.")
+        await callback.message.answer("❌ Ошибка сохранения. Проверьте логи и попробуйте снова")
         await state.clear()
         await callback.answer()
         return
@@ -434,7 +434,7 @@ async def fake_profile_delete_prompt(callback: CallbackQuery):
     await callback.message.answer(
         "⚠️ <b>Удалить тестовую анкету?</b>\n\n"
         f"{html.escape(profile['name'])}, {profile['age']} лет\n"
-        "Связанные с ней лайки тоже будут удалены.",
+        "Связанные с ней лайки тоже будут удалены",
         reply_markup=_delete_confirmation_keyboard(fake_id),
     )
     await callback.answer()
@@ -453,7 +453,7 @@ async def fake_profile_delete_confirm(callback: CallbackQuery):
     deleted = await delete_fake_profile(fake_id)
     if deleted:
         await callback.answer("Тестовая анкета удалена")
-        await callback.message.edit_text("✅ Тестовая анкета и связанные лайки удалены.")
+        await callback.message.edit_text("✅ Тестовая анкета и связанные лайки удалены")
         profiles = await get_fake_profiles()
         page = 0
         if profiles:
