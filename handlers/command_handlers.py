@@ -55,4 +55,4 @@ async def delete_my_profile(message: types.Message):
     if deleted:
         await message.answer("✅ Ваш профиль удалён. Можете заполнить анкету заново!")
     else:
-        await message.answer("⚠️ Профиль не найден.")
+        await message.answer("⚠️ Профиль не найден")
