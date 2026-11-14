@@ -131,7 +131,7 @@ async def handle_edit_name(message: Message, state: FSMContext, bot: Bot):
         await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update name for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить имя. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить имя. Попробуйте позже</b>")
 
 
 # --- Редактирование возраста ---
@@ -164,7 +164,7 @@ async def handle_edit_age(message: Message, state: FSMContext, bot: Bot):
         await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update age for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить возраст. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить возраст. Попробуйте позже</b>")
 
 
 # --- Редактирование описания ---
@@ -197,7 +197,7 @@ async def handle_edit_description(message: Message, state: FSMContext, bot: Bot)
         await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update description for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить описание. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить описание. Попробуйте позже</b>")
 
 
 # --- Добавление фото и видео в анкету ---
@@ -213,32 +213,32 @@ async def handle_edit_profile_media(message: Message, state: FSMContext, bot: Bo
         video = message.video
         if video.duration > 30:
             await _replace_edit_media_status(
-                message, state, "❌ Видео должно длиться не больше 30 секунд."
+                message, state, "❌ Видео должно длиться не больше 30 секунд"
             )
             return
         item = {"type": "video", "file_id": video.file_id}
 
     if len(media_items) >= 3:
         await _replace_edit_media_status(
-            message, state, "Лимит — 3 фото/видео. Новые файлы не добавлены."
+            message, state, "Лимит — 3 фото/видео. Новые файлы не добавлены"
         )
         return
 
     media_items.append(item)
     await state.update_data(media=media_items)
-    await _replace_edit_media_status(message, state, f"✅ Добавлено ({len(media_items)}/3).")
+    await _replace_edit_media_status(message, state, f"✅ Добавлено ({len(media_items)}/3)")
 
 
 @router.callback_query(F.data == "finish_edit_profile_media")
 async def finish_edit_profile_media(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if await state.get_state() != EditProfile.photo.state:
-        await callback.answer("Этап редактирования уже завершён.")
+        await callback.answer("Этап редактирования уже завершён")
         return
 
     data = await state.get_data()
     media_items = list(data.get("media", []))
     if len(media_items) <= data.get("initial_media_count", len(media_items)):
-        await callback.answer("Сначала отправьте новое фото или видео.", show_alert=True)
+        await callback.answer("Сначала отправьте новое фото или видео", show_alert=True)
         return
 
     try:
@@ -248,7 +248,7 @@ async def finish_edit_profile_media(callback: CallbackQuery, state: FSMContext, 
         return
 
     if not success:
-        await callback.answer("Не удалось сохранить медиа. Попробуйте ещё раз.", show_alert=True)
+        await callback.answer("Не удалось сохранить медиа. Попробуйте ещё раз", show_alert=True)
         return
 
     user_id = callback.from_user.id
@@ -267,11 +267,11 @@ async def finish_edit_profile_media(callback: CallbackQuery, state: FSMContext, 
             except Exception:
                 pass
 
-    await bot.send_message(user_id, "✅ Медиа анкеты обновлено.")
+    await bot.send_message(user_id, "✅ Медиа анкеты обновлено")
     if displayer and displayer.profile:
         await displayer.with_stats().with_profile_keyboard().send()
     else:
-        await bot.send_message(user_id, "⚠️ Не удалось показать обновлённую анкету.")
+        await bot.send_message(user_id, "⚠️ Не удалось показать обновлённую анкету")
 
     admin_displayer = await ProfileDisplayer.create(bot, ADMIN_ID, user_id)
     if admin_displayer and admin_displayer.profile:
@@ -280,7 +280,7 @@ async def finish_edit_profile_media(callback: CallbackQuery, state: FSMContext, 
 
 @router.message(EditProfile.photo)
 async def handle_edit_profile_media_invalid(message: Message):
-    await message.answer("❌ Отправьте фото или видео до 30 секунд.")
+    await message.answer("❌ Отправьте фото или видео до 30 секунд")
 
 
 @router.callback_query(F.data == "edit_profile")
@@ -366,7 +366,7 @@ async def edit_photo(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     profile = await get_user_profile(user_id)
     if not profile:
-        await callback.answer("Анкета не найдена.", show_alert=True)
+        await callback.answer("Анкета не найдена", show_alert=True)
         return
 
     await callback.answer()
@@ -377,7 +377,7 @@ async def edit_photo(callback: CallbackQuery, state: FSMContext):
 
     prompt = await callback.message.answer(
         "📸 <b>Отправьте фото или видео до 30 секунд.</b>\n\n"
-        "Можно добавить до 3 файлов. Новые файлы заменят прежние.",
+        "Можно добавить до 3 файлов. Новые файлы заменят прежние",
         reply_markup=cancel_edit(),
     )
     await state.set_state(EditProfile.photo)
@@ -404,7 +404,7 @@ async def process_edit_gender(callback: CallbackQuery, state: FSMContext, bot):
         await callback.message.answer("✅ <b>Пол успешно обновлён!</b>")
     else:
         logger.error(f"Failed to update gender for user {user_id}")
-        await callback.message.answer("⚠️ <b>Не удалось сохранить пол. Попробуйте позже.</b>")
+        await callback.message.answer("⚠️ <b>Не удалось сохранить пол. Попробуйте позже</b>")
     await handle_show_my_profile_request(bot, callback)
 
 # --- Редактирование геопозиции (кнопка) ---
@@ -425,7 +425,7 @@ async def edit_geo(callback: CallbackQuery, state: FSMContext):
     # Отправляем НОВОЕ сообщение с reply-клавиатурой (не редактируем!)
     await callback.message.answer(
         "📍 <b>Редактирование геопозиции</b>\n\n"
-        "Нажми кнопку ниже, чтобы поделиться новым местоположением.",
+        "Нажми кнопку ниже, чтобы поделиться новым местоположением",
         reply_markup=get_location_keyboard()
     )
 
@@ -439,7 +439,7 @@ async def handle_edit_geo(message: Message, state: FSMContext, bot: Bot):
     logger.info(f"Processing geo update for user {user_id}: {lat}, {lon}")
     
     # Убираем клавиатуру с кнопкой геопозиции
-    await message.answer("🔄 Обновляю данные...", reply_markup=ReplyKeyboardRemove())
+    await message.answer("🔄 Обновляю данные", reply_markup=ReplyKeyboardRemove())
     
     # Определяем город (если есть функция)
     city = None
@@ -467,7 +467,7 @@ async def handle_edit_geo(message: Message, state: FSMContext, bot: Bot):
             await displayer.with_stats().with_profile_keyboard().send_over(reply_to=message)
     else:
         logger.error(f"Failed to update geo for user {user_id}")
-        await message.answer("⚠️ <b>Не удалось сохранить геопозицию. Попробуйте позже.</b>")
+        await message.answer("⚠️ <b>Не удалось сохранить геопозицию. Попробуйте позже</b>")
 
 # --- Ошибка: прислали не геопозицию ---
 @router.message(EditProfile.location)
@@ -475,6 +475,6 @@ async def handle_edit_geo_invalid(message: Message):
     user_id = message.from_user.id
     logger.warning(f"User {user_id} sent invalid data instead of location")
     await message.answer(
-        "❌ <b>Пожалуйста, нажми на кнопку 📍 Поделиться геопозицией</b> на клавиатуре ниже.",
+        "❌ <b>Пожалуйста, нажми на кнопку 📍 Поделиться геопозицией</b> на клавиатуре ниже",
         reply_markup=get_location_keyboard()
     )
