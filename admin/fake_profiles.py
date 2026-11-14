@@ -297,19 +297,18 @@ async def fake_profile_add_photo(message: Message, state: FSMContext, bot: Bot):
 
 @router.message(AdminStates.fake_profile_media, F.video)
 async def fake_profile_add_video(message: Message, state: FSMContext, bot: Bot):
-
-@router.message(AdminStates.fake_profile_media)
-async def fake_profile_media_invalid(message: Message):
-    if not _is_admin(message.from_user.id):
-        return
-    await message.answer("❌ Отправьте одно фото или видео длительностью до 30 секунд. Документы не поддерживаются")
-
     video = message.video
     if video.duration > 30:
         await message.answer("❌ Видео должно длиться не более 30 секунд")
         return
     await _save_fake_profile(message, state, bot, "video", video.file_id)
 
+
+@router.message(AdminStates.fake_profile_media)
+async def fake_profile_media_invalid(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    await message.answer("❌ Отправьте одно фото или видео длительностью до 30 секунд. Документы не поддерживаются")
 
 async def _save_fake_profile(
     message: Message,
